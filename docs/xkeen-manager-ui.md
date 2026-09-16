@@ -6,8 +6,8 @@
 
 - профилями (несколько независимых наборов настроек)
 - активным ключом (radio-selector в панели «Активный ключ»)
-- ручными ключами (vless:// / vmess:// / hysteria2:// URI)
-- подписками (HTTPS URL → backend стягивает и парсит)
+- ручными ключами (VLESS/VMess/Hysteria(2)/Trojan/SS/TUIC/AnyTLS/SOCKS/HTTP/SSH/Naive URI или standalone sing-box/Hiddify JSON, включая WireGuard `endpoints[]`)
+- подписками (HTTPS URL → backend стягивает и парсит URI-list либо sing-box/Hiddify `outbounds[]`/`endpoints[]` JSON)
 - routing-группами (`vless-reality` через VPN / `bypass` мимо)
 - Mux/XUDP
 - сгенерированными файлами `xray` и `sing-box` на роутере
@@ -20,13 +20,13 @@ UI state:
 
 Сгенерированные файлы `xray`:
 
-- `/opt/etc/xray/configs/04_outbounds.json` — активный outbound (vless / vmess / hy2-мост)
+- `/opt/etc/xray/configs/04_outbounds.json` — активный outbound (VLESS/VMess native или SOCKS bridge в sing-box)
 - `/opt/etc/xray/configs/05_routing.json` — правила из UI-групп
 
 Также с UI-стороны редактируется:
 
 - `/opt/etc/xray/configs/03_inbounds.json` — содержит SOCKS5-inbound `socks-in` (порт `61080`, LAN-IP роутера подставляется автоматически)
-- `/opt/etc/sing-box/xkeen.json` — bridge для hy2 (mixed :61225) и TPROXY UDP (:61221)
+- `/opt/etc/sing-box/xkeen.json` — TPROXY UDP `:61221`; для sing-box-backed протоколов также mixed bridge `:61225` + реальный upstream outbound/endpoint
 
 Backend:
 
@@ -42,9 +42,9 @@ Backend:
 
 ### Добавить ключ
 
-**Ручной ключ** — вставить `vless://` / `vmess://` / `hysteria2://` URI, backend распарсит на поля. Или заполнить поля вручную.
+**Ручной ключ** — вставить поддерживаемый proxy URI или standalone sing-box/Hiddify JSON. URI парсится в нормализованные поля; raw JSON сохраняет provider-specific outbound/endpoint почти без преобразования.
 
-**Подписка** — HTTPS URL. Backend стягивает через `curl` (fallback `wget-ssl`), парсит base64 → набор URI → создаёт по одному `proxies[]`-элементу с `source=<subId>`.
+**Подписка** — HTTPS URL. Backend стягивает через `curl` (fallback `wget-ssl`), принимает base64/plain URI-list или sing-box/Hiddify JSON и создаёт по одному `proxies[]`-элементу с `source=<subId>`. Composite selector/urltest и raw outbounds/endpoints с недоступным `detour` не режутся до одного узла: UI сообщает ошибку для такой записи.
 
 ### Выбрать активный ключ
 
@@ -60,7 +60,7 @@ Pipeline из 4 шагов:
 
 1. **state** — POST `xkeen-ui-state.json`
 2. **outbounds** — генерирует `04_outbounds.json` из активного ключа
-3. **sing-box** — генерирует `sing-box/xkeen.json` (bridge для hy2 или пустой)
+3. **sing-box** — генерирует `sing-box/xkeen.json` (SS-relay к Xray для VLESS/VMess либо mixed bridge + upstream для sing-box-backed протокола) и валидирует через `sing-box check` до замены рабочего файла
 4. **routing** — генерирует `05_routing.json`, validate xray-config, backup всех троих, перезапускает xray + sing-box (если нужно)
 
 При провале UI показывает **на каком шаге** упало (`Save/apply failed на шаге <state|outbounds|sing-box|routing>: ...`).
@@ -137,7 +137,7 @@ UI использует логин и пароль от веб-интерфей�
 - Есть hook `PREROUTING → xkeen` в table `nat` (для TCP).
 - В mangle-PREROUTING в **самом конце** висит TPROXY-jump для UDP-route (проверяет `xkeen_udp_route` ipset).
 - `xray` слушает `:61219` (dokodemo TCP), `:61080` (socks-in TCP+UDP), `:62640` (SS-relay TCP+UDP).
-- `sing-box` слушает `:61221` (TPROXY UDP), `:61225` (mixed для hy2 bridge).
+- `sing-box` всегда слушает `:61221` (TPROXY UDP); `:61225` (mixed bridge) появляется, когда активный ключ обслуживается sing-box.
 - socks-in inbound имеет `settings.ip` = LAN-IP роутера (автоподставляется при apply/restart).
 - Локалка, discovery и RFC1918-подсети идут через `RETURN` до `xray`.
 

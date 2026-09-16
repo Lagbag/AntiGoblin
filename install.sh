@@ -4,12 +4,12 @@
 # Usage on the router (after Entware/OPKG is enabled in Keenetic and
 # the USB stick is mounted at /opt):
 #
-#   curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/install.sh | sh
 #
 # Or (if curl is not yet installed):
 #
 #   opkg install curl
-#   curl -fsSL -o install.sh https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/install.sh
+#   curl -fsSL -o install.sh https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/install.sh
 #   sh install.sh
 #
 # Note: Entware ships wget-nossl by default (no HTTPS support), so
@@ -21,16 +21,23 @@
 
 set -eu
 
-REPO_OWNER="${ANTIGOBLIN_REPO_OWNER:-MaksimSamarin}"
+REPO_OWNER="${ANTIGOBLIN_REPO_OWNER:-Lagbag}"
 REPO_NAME="${ANTIGOBLIN_REPO_NAME:-AntiGoblin}"
 REPO_BRANCH="${ANTIGOBLIN_REPO_BRANCH:-main}"
 REPO_TARBALL="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${REPO_BRANCH}.tar.gz"
 
-SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.8}"
+SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.21}"
+HIDDIFY_SING_BOX_VERSION="${HIDDIFY_SING_BOX_VERSION:-1.13.0.h5}"
+ANTIGOBLIN_SING_BOX_FLAVOR="${ANTIGOBLIN_SING_BOX_FLAVOR:-hiddify}"
 
 WORK_DIR="${ANTIGOBLIN_WORK_DIR:-/tmp/antigoblin-install}"
 SRC_DIR=""
 FORCE_SEED="${ANTIGOBLIN_FORCE:-0}"
+INSTALL_MODE="${ANTIGOBLIN_MODE:-auto}"
+EXISTING_INSTALL=0
+CURRENT_VERSION=""
+TARGET_VERSION=""
+LAST_BACKUP_DIR=""
 
 UI_PORT="${ANTIGOBLIN_UI_PORT:-8899}"
 
@@ -41,6 +48,77 @@ log() {
 die() {
   printf 'ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+usage() {
+  cat <<'EOF'
+AntiGoblin installer / updater
+
+Usage:
+  sh install.sh             auto: install or upgrade in-place
+  sh install.sh --update    require an existing installation, then upgrade
+  sh install.sh --install   install (also safe over an existing installation)
+  sh install.sh --force     also reseed sample configs where safe
+  sh install.sh --help
+
+User state and generated routing/outbound configs are preserved on upgrade.
+A pre-upgrade backup is written under /opt/var/backups/antigoblin/.
+EOF
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --update) INSTALL_MODE=update ;;
+      --install) INSTALL_MODE=install ;;
+      --force|--force-seed) FORCE_SEED=1 ;;
+      --help|-h) usage; exit 0 ;;
+      *) die "Unknown argument: $1 (use --help)" ;;
+    esac
+    shift
+  done
+}
+
+detect_existing_install() {
+  if [ -f /opt/share/xkeen-manager/xkeen-ui-state.json ] \
+      || [ -x /opt/etc/init.d/S26antigoblin ] \
+      || [ -f /opt/etc/antigoblin.conf ]; then
+    EXISTING_INSTALL=1
+    if [ -r /opt/share/xkeen-manager/VERSION ]; then
+      CURRENT_VERSION="$(head -n 1 /opt/share/xkeen-manager/VERSION 2>/dev/null | tr -d '\r\n')"
+    fi
+  fi
+  if [ "$INSTALL_MODE" = "update" ] && [ "$EXISTING_INSTALL" != "1" ]; then
+    die "--update requested, but AntiGoblin is not installed under /opt. Run without --update for a clean install."
+  fi
+}
+
+backup_existing_install() {
+  [ "$EXISTING_INSTALL" = "1" ] || return 0
+  stamp="$(date '+%Y%m%d-%H%M%S' 2>/dev/null || echo now)"
+  root="/opt/var/backups/antigoblin"
+  dst="$root/pre-upgrade-$stamp"
+  mkdir -p "$dst/xray" "$dst/sing-box"
+
+  [ -f /opt/share/xkeen-manager/xkeen-ui-state.json ] && cp /opt/share/xkeen-manager/xkeen-ui-state.json "$dst/xkeen-ui-state.json" || true
+  [ -f /opt/etc/antigoblin.conf ] && cp /opt/etc/antigoblin.conf "$dst/antigoblin.conf" || true
+  [ -f /opt/share/xkeen-manager/VERSION ] && cp /opt/share/xkeen-manager/VERSION "$dst/VERSION.previous" || true
+  for f in /opt/etc/xray/configs/*.json; do
+    [ -f "$f" ] && cp "$f" "$dst/xray/$(basename "$f")" || true
+  done
+  for f in /opt/etc/sing-box/*.json; do
+    [ -f "$f" ] && cp "$f" "$dst/sing-box/$(basename "$f")" || true
+  done
+  LAST_BACKUP_DIR="$dst"
+  log "Pre-upgrade backup: $dst"
+
+  # Keep only the 5 newest pre-upgrade directories. BusyBox-compatible.
+  old_dirs="$(ls -1dt "$root"/pre-upgrade-* 2>/dev/null | /opt/bin/awk 'NR>5')"
+  if [ -n "$old_dirs" ]; then
+    printf '%s\n' "$old_dirs" | while IFS= read -r old; do
+      [ -n "$old" ] && rm -rf "$old"
+    done
+  fi
 }
 
 # Resolve an HTTPS-capable downloader. Default Entware ships wget-nossl
@@ -197,6 +275,7 @@ fetch_sources() {
   if [ -n "${ANTIGOBLIN_SRC_DIR:-}" ] && [ -d "$ANTIGOBLIN_SRC_DIR/ui/xkeen-manager" ]; then
     log "Using pre-staged sources from ANTIGOBLIN_SRC_DIR=$ANTIGOBLIN_SRC_DIR"
     SRC_DIR="$ANTIGOBLIN_SRC_DIR"
+    [ -r "$SRC_DIR/VERSION" ] && TARGET_VERSION="$(head -n 1 "$SRC_DIR/VERSION" 2>/dev/null | tr -d '\r\n')" || true
     return 0
   fi
 
@@ -214,6 +293,7 @@ fetch_sources() {
   SRC_DIR="$(find "$WORK_DIR" -maxdepth 1 -type d -name "${REPO_NAME}-*" | head -n 1)"
   [ -n "$SRC_DIR" ] || die "Cannot locate extracted source directory under $WORK_DIR"
   [ -d "$SRC_DIR/ui/xkeen-manager" ] || die "Source tree looks broken: $SRC_DIR/ui/xkeen-manager missing"
+  [ -r "$SRC_DIR/VERSION" ] && TARGET_VERSION="$(head -n 1 "$SRC_DIR/VERSION" 2>/dev/null | tr -d '\r\n')" || true
 }
 
 ensure_xkeen_policy() {
@@ -398,6 +478,10 @@ deploy_sources() {
   if [ -f "$UI/antigoblin-logo.png" ]; then
     cp "$UI/antigoblin-logo.png" /opt/share/xkeen-manager/antigoblin-logo.png
   fi
+  if [ -f "$SRC_DIR/VERSION" ]; then
+    cp "$SRC_DIR/VERSION" /opt/share/xkeen-manager/VERSION
+    chmod 644 /opt/share/xkeen-manager/VERSION 2>/dev/null || true
+  fi
   chmod 644 /opt/share/xkeen-manager/index.html /opt/share/xkeen-manager/styles.css /opt/share/xkeen-manager/app.js 2>/dev/null || true
 
   log "Deploying backend"
@@ -421,8 +505,63 @@ deploy_sources() {
 }
 
 install_singbox() {
+  EXISTING_SB=""
+  EXISTING_SB_BIN=""
   if command -v sing-box >/dev/null 2>&1; then
-    log "sing-box already installed: $(sing-box version | head -n 1 2>/dev/null || true)"
+    EXISTING_SB_BIN="$(command -v sing-box)"
+  elif [ -x /opt/sbin/sing-box ]; then
+    EXISTING_SB_BIN=/opt/sbin/sing-box
+  fi
+  [ -n "$EXISTING_SB_BIN" ] && EXISTING_SB="$($EXISTING_SB_BIN version | head -n 1 2>/dev/null || true)"
+
+  HIDDIFY_ARCH=""
+  case "$(uname -m)" in
+    aarch64|arm64) HIDDIFY_ARCH="arm64" ;;
+    x86_64|amd64)  HIDDIFY_ARCH="amd64" ;;
+  esac
+
+  rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
+  mkdir -p /tmp/antigoblin-sing-box
+
+  # Hiddify's sing-box fork carries the extensions Hiddify itself uses
+  # (including XHTTP and other compatibility patches). Prefer it on the
+  # architectures for which Hiddify publishes router-usable Linux assets;
+  # fall back to upstream SagerNet everywhere else.
+  if [ "$ANTIGOBLIN_SING_BOX_FLAVOR" = "hiddify" ] && [ -n "$HIDDIFY_ARCH" ]; then
+    if printf '%s' "$EXISTING_SB" | grep -q "$HIDDIFY_SING_BOX_VERSION"; then
+      log "Hiddify sing-box already installed: $EXISTING_SB"
+      rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
+      return 0
+    fi
+    HIDDIFY_URL="https://github.com/hiddify/hiddify-sing-box/releases/download/v${HIDDIFY_SING_BOX_VERSION}/sing-box-${HIDDIFY_SING_BOX_VERSION}-linux-${HIDDIFY_ARCH}.tar.gz"
+    log "Downloading Hiddify sing-box ${HIDDIFY_SING_BOX_VERSION} (${HIDDIFY_ARCH})"
+    if fetch_to "$HIDDIFY_URL" /tmp/antigoblin-sing-box.tar.gz 2>/dev/null; then
+      /opt/bin/tar -xzf /tmp/antigoblin-sing-box.tar.gz -C /tmp/antigoblin-sing-box
+      SBIN="$(find /tmp/antigoblin-sing-box -type f -name sing-box | head -n 1)"
+      if [ -n "$SBIN" ]; then
+        cp "$SBIN" /opt/sbin/sing-box
+        chmod 755 /opt/sbin/sing-box
+        CRONET_LIB="$(find /tmp/antigoblin-sing-box -type f -name 'libcronet.so*' | head -n 1)"
+        if [ -n "$CRONET_LIB" ]; then
+          mkdir -p /opt/lib /opt/sbin
+          cp "$CRONET_LIB" /opt/lib/
+          cp "$CRONET_LIB" "/opt/sbin/$(basename "$CRONET_LIB")"
+          chmod 755 "/opt/lib/$(basename "$CRONET_LIB")" "/opt/sbin/$(basename "$CRONET_LIB")" 2>/dev/null || true
+          log "Installed bundled libcronet for NaiveProxy support"
+        fi
+        log "Installed Hiddify sing-box to /opt/sbin/sing-box"
+        rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
+        return 0
+      fi
+    fi
+    log "WARN: Hiddify sing-box asset unavailable; falling back to upstream sing-box ${SING_BOX_VERSION}."
+    rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
+    mkdir -p /tmp/antigoblin-sing-box
+  fi
+
+  if [ -n "$EXISTING_SB" ]; then
+    log "Keeping existing sing-box after Hiddify fallback: $EXISTING_SB"
+    rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
     return 0
   fi
 
@@ -434,18 +573,12 @@ install_singbox() {
   case "$(uname -m)" in
     aarch64|arm64)   ARCH_CANDIDATES="arm64-musl arm64" ;;
     armv7l|armv7*)   ARCH_CANDIDATES="armv7-musl armv7" ;;
-    # Old sing-box builds ship no armv6 asset. Try armv7 — some armv6 chips
-    # run armv7 binaries; if not, the user gets a clear warn and lives without
-    # hy2 (VLESS TCP still works).
-    armv6l|armv6*)   ARCH_CANDIDATES="armv7-musl armv7" ;;
-    mipsel*)         ARCH_CANDIDATES="mipsle-softfloat mipsle" ;;
-    mips*)           ARCH_CANDIDATES="mips-softfloat mips" ;;
+    armv6l|armv6*)   ARCH_CANDIDATES="armv6" ;;
+    mipsel*)         ARCH_CANDIDATES="mipsle-softfloat-musl mipsle-softfloat mipsle" ;;
+    mips*)           ARCH_CANDIDATES="mips-softfloat-musl mips-softfloat mips" ;;
     x86_64|amd64)    ARCH_CANDIDATES="amd64-musl amd64" ;;
     *)               ARCH_CANDIDATES="$(uname -m)" ;;
   esac
-
-  rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
-  mkdir -p /tmp/antigoblin-sing-box
 
   DOWNLOADED=0
   for arch_try in $ARCH_CANDIDATES; do
@@ -470,6 +603,14 @@ install_singbox() {
   if [ -n "$SBIN" ]; then
     cp "$SBIN" /opt/sbin/sing-box
     chmod 755 /opt/sbin/sing-box
+    CRONET_LIB="$(find /tmp/antigoblin-sing-box -type f -name 'libcronet.so*' | head -n 1)"
+    if [ -n "$CRONET_LIB" ]; then
+      mkdir -p /opt/lib /opt/sbin
+      cp "$CRONET_LIB" /opt/lib/
+      cp "$CRONET_LIB" "/opt/sbin/$(basename "$CRONET_LIB")"
+      chmod 755 "/opt/lib/$(basename "$CRONET_LIB")" "/opt/sbin/$(basename "$CRONET_LIB")" 2>/dev/null || true
+      log "Installed bundled libcronet for NaiveProxy support"
+    fi
     log "Installed /opt/sbin/sing-box"
   else
     log "WARN: sing-box binary not found inside tarball"
@@ -522,19 +663,20 @@ print_summary() {
 
   printf '\n'
   printf '====================================================\n'
-  printf 'AntiGoblin install complete.\n'
+  if [ "$EXISTING_INSTALL" = "1" ]; then printf 'AntiGoblin update complete.\n'; else printf 'AntiGoblin install complete.\n'; fi
   printf '\n'
   printf 'Open the UI:\n'
   printf '  http://%s:%s/\n' "$ROUTER_IP" "$UI_PORT"
   printf '\n'
-  printf 'UI auth uses your Keenetic web UI login and password.\n'
+  if [ -n "$TARGET_VERSION" ]; then printf 'Version: %s\n' "$TARGET_VERSION"; fi
+  if [ -n "$LAST_BACKUP_DIR" ]; then printf 'Pre-upgrade backup: %s\n' "$LAST_BACKUP_DIR"; fi
+  printf 'UI auth uses your Keenetic web UI login and password.\n' 
   printf '\n'
   printf 'Next steps in the UI:\n'
   printf '  1. Add a proxy key: paste vless:// / vmess:// / hysteria2://\n'
   printf '     URI, or add a subscription URL.\n'
   printf '  2. Select the active key (radio in the keys panel).\n'
-  printf '  3. Configure routing groups (each with outbound:\n'
-  printf '     vless-reality [via active key] / bypass).\n'
+  printf '  3. Configure groups: what should go through VPN or bypass it.\n'
   printf '  4. Click "Save and apply".\n'
   printf '\n'
   printf 'Then in the Keenetic web UI assign devices to policy "xkeen"\n'
@@ -547,9 +689,17 @@ cleanup() {
 }
 
 main() {
+  parse_args "$@"
   require_entware
+  detect_existing_install
+  if [ "$EXISTING_INSTALL" = "1" ]; then
+    log "Existing AntiGoblin detected${CURRENT_VERSION:+ (version $CURRENT_VERSION)} — upgrading in place"
+  else
+    log "No existing AntiGoblin installation detected — clean install"
+  fi
   install_packages
   fetch_sources
+  backup_existing_install
   mkdirs
   ensure_xkeen_policy
   deploy_sources

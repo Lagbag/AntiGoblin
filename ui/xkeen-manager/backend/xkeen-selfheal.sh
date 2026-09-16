@@ -33,6 +33,8 @@ XRAY_REMOTE_TOTAL_COUNT=0
 XRAY_REMOTE_ESTABLISHED_COUNT=0
 XRAY_REMOTE_FIN_WAIT_COUNT=0
 XRAY_REMOTE_ORPHAN_FIN_WAIT_COUNT=0
+VPN_REMOTE_PROC="xray"
+VPN_REMOTE_PID=""
 XRAY_REMOTE_FIN_WAIT_WARN_THRESHOLD=20
 XRAY_REMOTE_FIN_WAIT_CRITICAL_THRESHOLD=50
 XRAY_REMOTE_FIN_WAIT_STREAK_REQUIRED=3
@@ -128,6 +130,16 @@ singbox_ready() {
   netstat -lnpu 2>/dev/null | grep -q ':61221 '
 }
 
+singbox_bridge_needed() {
+  command -v jq >/dev/null 2>&1 || return 1
+  [ -f "$XRAY_CONF_DIR/04_outbounds.json" ] || return 1
+  [ "$(jq -r '.outbounds[]? | select(.tag == "vless-reality") | .protocol // empty' "$XRAY_CONF_DIR/04_outbounds.json" 2>/dev/null | head -n 1)" = "socks" ]
+}
+
+singbox_bridge_ready() {
+  netstat -lnpt 2>/dev/null | grep -q '127.0.0.1:61225 '
+}
+
 tproxy_ready() {
   singbox_ready
 }
@@ -172,10 +184,25 @@ get_xray_remote_endpoint() {
   XRAY_REMOTE_HOST=""
   XRAY_REMOTE_PORT=0
   XRAY_REMOTE_IP=""
+  VPN_REMOTE_PROC="xray"
+  VPN_REMOTE_PID="${XRAY_PID:-}"
 
   if command -v jq >/dev/null 2>&1 && [ -f "$XRAY_CONF_DIR/04_outbounds.json" ]; then
     XRAY_REMOTE_HOST="$(jq -r '.outbounds[]? | select(.tag == "vless-reality") | .settings.vnext[0].address // empty' "$XRAY_CONF_DIR/04_outbounds.json" 2>/dev/null | head -n 1)"
     XRAY_REMOTE_PORT="$(jq -r '.outbounds[]? | select(.tag == "vless-reality") | .settings.vnext[0].port // 0' "$XRAY_CONF_DIR/04_outbounds.json" 2>/dev/null | head -n 1)"
+  fi
+
+  if [ -z "$XRAY_REMOTE_HOST" ] && command -v jq >/dev/null 2>&1 && [ -f "$SING_BOX_CONF" ]; then
+    XRAY_REMOTE_HOST="$(jq -r '.outbounds[]? | select(.tag == "proxy") | .server // empty' "$SING_BOX_CONF" 2>/dev/null | head -n 1)"
+    XRAY_REMOTE_PORT="$(jq -r '.outbounds[]? | select(.tag == "proxy") | .server_port // 0' "$SING_BOX_CONF" 2>/dev/null | head -n 1)"
+    if [ -z "$XRAY_REMOTE_HOST" ]; then
+      XRAY_REMOTE_HOST="$(jq -r '.endpoints[]? | select(.tag == "proxy") | .peers[0].address // empty' "$SING_BOX_CONF" 2>/dev/null | head -n 1)"
+      XRAY_REMOTE_PORT="$(jq -r '.endpoints[]? | select(.tag == "proxy") | .peers[0].port // 0' "$SING_BOX_CONF" 2>/dev/null | head -n 1)"
+    fi
+    if [ -n "$XRAY_REMOTE_HOST" ]; then
+      VPN_REMOTE_PROC="sing-box"
+      VPN_REMOTE_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
+    fi
   fi
 
   case "$XRAY_REMOTE_PORT" in
@@ -205,7 +232,7 @@ capture_xray_remote_socket_metrics() {
   XRAY_REMOTE_FIN_WAIT_COUNT=0
   XRAY_REMOTE_ORPHAN_FIN_WAIT_COUNT=0
 
-  [ -n "$XRAY_PID" ] || return 0
+  [ -n "$VPN_REMOTE_PID" ] || return 0
   [ "${XRAY_REMOTE_PORT:-0}" -gt 0 ] || return 0
 
   if [ -n "$XRAY_REMOTE_IP" ]; then
@@ -220,8 +247,8 @@ capture_xray_remote_socket_metrics() {
   # PID/xray on the last field only. `grep "${PID}/xray"` substring-matches
   # e.g. 4567/xray inside 14567/xray, and inflates counts when a similar
   # PID appears.
-  SOCKET_LINES="$(netstat -anp 2>/dev/null | /opt/bin/awk -v pid="$XRAY_PID" -v port=":${XRAY_REMOTE_PORT}" '
-    $NF == pid "/xray" && (index($4, port) || index($5, port)) { print }
+  SOCKET_LINES="$(netstat -anp 2>/dev/null | /opt/bin/awk -v pid="$VPN_REMOTE_PID" -v proc="$VPN_REMOTE_PROC" -v port=":${XRAY_REMOTE_PORT}" '
+    $NF == pid "/" proc && (index($4, port) || index($5, port)) { print }
   ')"
   [ -n "$SOCKET_LINES" ] || return 0
 
@@ -500,6 +527,9 @@ check_runtime() {
     xray_relay_ready || needs_repair=1
     tproxy_ready || needs_repair=1
   fi
+  if singbox_bridge_needed && ! singbox_bridge_ready; then
+    needs_repair=1
+  fi
   xray_ready || needs_repair=1
   capture_health_metrics
   maybe_log_health
@@ -725,6 +755,9 @@ repair_runtime() {
   elif has_rule ipset list "$UDP_ROUTE_SET" && udp_route_has_entries && ! tproxy_ready; then
     log "sing-box tproxy restart needed"
     restart_singbox
+  elif [ "$HEALTH_STATUS" = "vpn_fin_critical" ] && [ "$VPN_REMOTE_PROC" = "sing-box" ]; then
+    log "sing-box deep health restart needed: $HEALTH_STATUS"
+    restart_singbox
   elif [ "$HEALTH_STATUS" = "fd_critical" ] || [ "$HEALTH_STATUS" = "vpn_fin_critical" ]; then
     if restart_xray_allowed; then
       log "xray deep health restart needed: $HEALTH_STATUS"
@@ -732,6 +765,11 @@ repair_runtime() {
     else
       health_log "action=xray_restart_skipped reason=$HEALTH_STATUS cooldown=active"
     fi
+  fi
+
+  if singbox_bridge_needed && ! singbox_bridge_ready; then
+    log "sing-box bridge restart needed"
+    restart_singbox
   fi
 
   capture_health_metrics

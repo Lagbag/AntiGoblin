@@ -73,11 +73,23 @@ const LOCALES = {
     authPasswordLabel: "\u041f\u0430\u0440\u043e\u043b\u044c",
     authSubmit: "\u0412\u043e\u0439\u0442\u0438",
     authSubmitting: "\u0412\u0445\u043e\u0434...",
-    heroTitle: "\u041f\u0430\u043d\u0435\u043b\u044c \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f XKeen/xray",
-    heroLead: "\u0423\u043f\u0440\u0430\u0432\u043b\u044f\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044f\u043c\u0438, \u0433\u0440\u0443\u043f\u043f\u0430\u043c\u0438 \u0438 VLESS-\u043a\u043e\u043d\u0444\u0438\u0433\u043e\u043c \u0434\u043b\u044f XKeen/xray \u0432 \u043e\u0434\u043d\u043e\u0439 \u043f\u0430\u043d\u0435\u043b\u0438.",
+    heroTitle: "AntiGoblin",
+    heroLead: "VPN-маршрутизация на Keenetic без возни с конфигами: добавь сервер, выбери что вести через VPN и примени.",
+    setupGuideKicker: "Быстрый старт",
+    setupGuideTitle: "Три шага до рабочего VPN",
+    setupGuideLead: "Сначала добавь ключ или подписку, потом выбери активный сервер и создай хотя бы одно правило трафика.",
+    setupStepAccessTitle: "Добавь VPN-доступ",
+    setupStepAccessDesc: "Подписка, URI или Hiddify / sing-box JSON",
+    setupStepActiveTitle: "Выбери активный сервер",
+    setupStepActiveDesc: "Именно через него пойдут VPN-группы",
+    setupStepRulesTitle: "Настрой правила",
+    setupStepRulesDesc: "Домены / CIDR → через VPN или мимо VPN",
+    setupProgressFmt: "{done} / 3",
     langLabel: "Language",
-    profileKicker: "\u0411\u0430\u0437\u043e\u0432\u044b\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438",
-    profileTitle: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u043f\u0440\u043e\u0444\u0438\u043b\u044f",
+    profileKicker: "Профиль",
+    profileTitle: "Профиль и VPN-доступ",
+    profileAdvancedSummary: "Дополнительные настройки профиля",
+    profileAdvancedHint: "Обычно менять не нужно",
     activeProfileLabel: "\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c",
     profileNameLabel: "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043d\u0430\u0431\u043e\u0440\u0430",
     domainStrategyLabel: "\u0421\u0442\u0440\u0430\u0442\u0435\u0433\u0438\u044f \u0434\u043e\u043c\u0435\u043d\u043e\u0432",
@@ -85,8 +97,19 @@ const LOCALES = {
     trafficTypeLabel: "\u041d\u0430\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435",
     trafficTypeVpn: "\u0427\u0435\u0440\u0435\u0437 VPN",
     trafficTypeBypass: "\u041c\u0438\u043c\u043e VPN",
-    proxyTitle: "\u041a\u043e\u043d\u0444\u0438\u0433 \u043f\u0440\u043e\u043a\u0441\u0438",
-    proxyUrlLabel: "VLESS URL",
+    proxyTitle: "VPN-доступ",
+    proxyHelp: "Добавь подписку или отдельный ключ. AntiGoblin сам определит протокол и выберет Xray или sing-box.",
+    activeKeyHelp: "Выбери один сервер. Все правила «Через VPN» используют его.",
+    activeProxyFilterPlaceholder: "Поиск по имени, протоколу или адресу…",
+    activeProxyCountFmt: "{shown} из {total}",
+    activeProxyNoMatches: "Ничего не найдено. Очисти поиск или проверь название / протокол.",
+    subsHelp: "Лучший вариант, если провайдер выдаёт URL подписки.",
+    manualKeysHelp: "URI вида vless://, hysteria2://, tuic:// и другие.",
+    manualKeyFormHelp: "Вставь ссылку целиком. Поля ниже заполнятся автоматически; вручную их обычно трогать не надо.",
+    subscriptionFormHelp: "Вставь HTTPS-ссылку подписки. AntiGoblin загрузит список серверов и добавит их в активный профиль.",
+    proxyAdvancedSummary: "Производительность / Mux",
+    proxyAdvancedHint: "Не меняй без необходимости",
+    proxyUrlLabel: "Proxy URI / sing-box JSON",
     proxyAddressLabel: "\u0421\u0435\u0440\u0432\u0435\u0440",
     proxyPortLabel: "\u041f\u043e\u0440\u0442",
     muxKicker: "Mux / XUDP",
@@ -97,19 +120,23 @@ const LOCALES = {
     muxModeOff: "Off",
     muxModeXudp: "XUDP only",
     previewKicker: "\u041f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440",
-    previewTitle: "\u0418\u0442\u043e\u0433\u043e\u0432\u044b\u0439 routing.json",
-    groupsKicker: "\u0413\u0440\u0443\u043f\u043f\u044b",
-    groupsTitle: "\u041f\u0440\u0430\u0432\u0438\u043b\u0430 \u0442\u0440\u0430\u0444\u0438\u043a\u0430",
-    importBtn: "\u0418\u043c\u043f\u043e\u0440\u0442",
-    exportBtn: "\u0421\u043a\u0430\u0447\u0430\u0442\u044c",
-    repairBtn: "\u0420\u0435\u0441\u0442\u0430\u0440\u0442",
+    previewTitle: "Технический preview routing.json",
+    groupsKicker: "Маршрутизация",
+    groupsTitle: "Что вести через VPN",
+    groupsHelp: "Каждая группа — это список доменов и IP/CIDR. Выбери «Через VPN» или «Мимо VPN» и включи группу.",
+    groupSummaryFmt: "{domains} дом. · {cidrs} CIDR",
+    actionDockTitle: "Готово к применению?",
+    actionDockHint: "Сохраняет профиль и перезапускает VPN-маршрутизацию.",
+    importBtn: "Импорт настроек",
+    exportBtn: "Экспорт настроек",
+    repairBtn: "Перезапустить VPN",
     saveApplyBtn: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0438 \u043f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c",
     logoutBtn: "\u0412\u044b\u0439\u0442\u0438",
     addProfileBtn: "\u041d\u043e\u0432\u044b\u0439",
     duplicateProfileBtn: "\u0414\u0443\u0431\u043b\u0438\u0440\u043e\u0432\u0430\u0442\u044c",
     removeProfileBtn: "\u0423\u0434\u0430\u043b\u0438\u0442\u044c",
-    saveStateBtn: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c",
-    importProxyBtn: "\u0418\u043c\u043f\u043e\u0440\u0442 vless://",
+    saveStateBtn: "Сохранить профиль",
+    importProxyBtn: "Импорт",
     probeProxyBtn: "\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c",
     addGroupBtn: "\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0433\u0440\u0443\u043f\u043f\u0443",
     profileName: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c 1",
@@ -161,14 +188,15 @@ const LOCALES = {
     // Multi-key panel (HTML + JS)
     proxyPanelTitle: "\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438 \u0438 \u043a\u043b\u044e\u0447\u0438",
     subsHeading: "\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438",
-    manualKeysHeading: "\u0420\u0443\u0447\u043d\u044b\u0435 \u043a\u043b\u044e\u0447\u0438",
-    activeKeyHeading: "\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0439 \u043a\u043b\u044e\u0447",
+    manualKeysHeading: "Отдельные ключи",
+    activeKeyHeading: "Активный сервер",
     addManualKeyBtn: "+ \u0420\u0443\u0447\u043d\u043e\u0439 \u043a\u043b\u044e\u0447",
     addSubscriptionBtn: "+ \u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0430",
     probeActiveBtn: "\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0439",
     manualKeyFormTitleNew: "\u041d\u043e\u0432\u044b\u0439 \u043a\u043b\u044e\u0447",
     manualKeyFormTitleEdit: "\u0420\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043a\u043b\u044e\u0447",
-    parseUriBtn: "\u0420\u0430\u0441\u043f\u0430\u0440\u0441\u0438\u0442\u044c URI \u0432 \u043f\u043e\u043b\u044f",
+    parseUriBtn: "Добавить из ссылки / JSON",
+    saveManualFieldsBtn: "Сохранить ручные поля",
     keyNameLabel: "\u0418\u043c\u044f \u043a\u043b\u044e\u0447\u0430",
     keyNamePlaceholder: "My VPN",
     advancedFieldsSummary: "\u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u043d\u044b\u0435 \u043f\u043e\u043b\u044f (\u0437\u0430\u043f\u043e\u043b\u043d\u044f\u044e\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438)",
@@ -198,7 +226,7 @@ const LOCALES = {
     subRefreshKeptFmt: "~{n} \u0431\u0435\u0437 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439",
     subRefreshRemovedFmt: "\u2212{n} \u0443\u0434\u0430\u043b\u0451\u043d\u043e",
     subRefreshNoChanges: "\u0431\u0435\u0437 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439",
-    manualKeyMissingFmt: "\u041d\u0435 \u0445\u0432\u0430\u0442\u0430\u0435\u0442: {fields}. \u0417\u0430\u043f\u043e\u043b\u043d\u0438 \u043f\u043e\u043b\u044f \u0438\u043b\u0438 \u0432\u0441\u0442\u0430\u0432\u044c vless:// / vmess:// / hysteria2:// URI.",
+    manualKeyMissingFmt: "Не хватает: {fields}. Заполни поля или вставь поддерживаемый proxy URI.",
     fieldAddress: "\u0430\u0434\u0440\u0435\u0441",
     fieldUUID: "UUID",
     fieldPassword: "\u043f\u0430\u0440\u043e\u043b\u044c",
@@ -220,7 +248,7 @@ const LOCALES = {
     saveStateTitle: "\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 state \u043d\u0430 \u0440\u043e\u0443\u0442\u0435\u0440\u0435 \u0431\u0435\u0437 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f xray \u0438 \u0431\u0435\u0437 \u043f\u0440\u0438\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u0438.",
     saveApplyTitle: "\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u0442 state \u043d\u0430 \u0440\u043e\u0443\u0442\u0435\u0440\u0435, \u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0435\u0442 05_routing.json, \u0434\u0435\u043b\u0430\u0435\u0442 backup \u0438 \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0435\u0442 xray.",
     repairTitle: "\u041f\u0435\u0440\u0435\u0441\u043e\u0431\u0438\u0440\u0430\u0435\u0442 runtime XKeen/xray: \u0446\u0435\u043f\u043e\u0447\u043a\u0443 xkeen \u0438 \u043f\u0440\u043e\u0446\u0435\u0441\u0441 xray.",
-    importProxyTitle: "\u0412\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u043f\u043e\u043b\u044f \u043f\u0440\u043e\u043a\u0441\u0438 \u0438\u0437 \u0441\u0441\u044b\u043b\u043a\u0438 vless://",
+    importProxyTitle: "Импортирует поддерживаемый proxy URI или standalone sing-box/Hiddify JSON как отдельный ключ.",
     probeProxyTitle: "\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0442 \u0441 \u0440\u043e\u0443\u0442\u0435\u0440\u0430, \u0440\u0435\u0437\u043e\u043b\u0432\u0438\u0442\u0441\u044f \u043b\u0438 \u0445\u043e\u0441\u0442 \u0438 \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043b\u0438 TCP-\u043f\u043e\u0440\u0442.",
     authRequiredMessage: "\u041d\u0443\u0436\u043d\u0430 \u0430\u043a\u0442\u0438\u0432\u043d\u0430\u044f \u0441\u0435\u0441\u0441\u0438\u044f \u0432 \u0432\u0435\u0431-\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435 Keenetic. \u0412\u043e\u0439\u0434\u0438 \u0432 \u0432\u0435\u0431-\u043c\u043e\u0440\u0434\u0443 \u0440\u043e\u0443\u0442\u0435\u0440\u0430 \u0438 \u043e\u0431\u043d\u043e\u0432\u0438 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0443.",
     authLoginHint: "\u041c\u043e\u0436\u043d\u043e \u0432\u043e\u0439\u0442\u0438 \u043a\u0430\u043a \u0447\u0435\u0440\u0435\u0437 \u0443\u0436\u0435 \u043e\u0442\u043a\u0440\u044b\u0442\u0443\u044e \u0441\u0435\u0441\u0441\u0438\u044e Keenetic, \u0442\u0430\u043a \u0438 \u043d\u0430\u043f\u0440\u044f\u043c\u0443\u044e \u043b\u043e\u0433\u0438\u043d\u043e\u043c \u0438 \u043f\u0430\u0440\u043e\u043b\u0435\u043c \u043e\u0442 \u0432\u0435\u0431-\u043c\u043e\u0440\u0434\u044b.",
@@ -243,7 +271,7 @@ const LOCALES = {
     outboundsFetchFailed: "outbounds fetch failed",
     routerSessionRequired: "router ui authorization required",
     healthKicker: "Состояние",
-    healthTitle: "Здоровье и логи",
+    healthTitle: "Диагностика и логи",
     healthRefreshBtn: "Обновить",
     healthRunning: "работает",
     healthStopped: "остановлен",
@@ -271,6 +299,7 @@ const LOCALES = {
     dedupCidrsRemoved: "Убрано лишних IP/CIDR: {n} (покрыты более широкой сетью)",
     stackInfoFetchFailed: "Не удалось загрузить параметры стека",
     stackVersions: "Версии",
+    stackAntiGoblinVer: "AntiGoblin",
     stackXrayVer: "xray", stackSingboxVer: "sing-box", stackKernel: "ядро", stackUptime: "uptime",
     stackVpnSection: "VPN",
     stackVpnHost: "сервер", stackVpnExitIp: "exit IP", stackVpnSni: "Reality SNI",
@@ -303,11 +332,23 @@ const LOCALES = {
     authPasswordLabel: "Password",
     authSubmit: "Sign in",
     authSubmitting: "Signing in...",
-    heroTitle: "XKeen/xray Control Panel",
-    heroLead: "Manage profiles, groups, and VLESS config for XKeen/xray in one panel.",
+    heroTitle: "AntiGoblin",
+    heroLead: "VPN routing for Keenetic without hand-editing configs: add a server, choose what goes through VPN, then apply.",
+    setupGuideKicker: "Quick start",
+    setupGuideTitle: "Three steps to a working VPN",
+    setupGuideLead: "Add a key or subscription, choose the active server, then create at least one traffic rule.",
+    setupStepAccessTitle: "Add VPN access",
+    setupStepAccessDesc: "Subscription, URI, or Hiddify / sing-box JSON",
+    setupStepActiveTitle: "Choose the active server",
+    setupStepActiveDesc: "All VPN rules will use this server",
+    setupStepRulesTitle: "Configure rules",
+    setupStepRulesDesc: "Domains / CIDR → VPN or bypass",
+    setupProgressFmt: "{done} / 3",
     langLabel: "Language",
-    profileKicker: "Profile setup",
-    profileTitle: "Profile settings",
+    profileKicker: "Profile",
+    profileTitle: "Profile and VPN access",
+    profileAdvancedSummary: "Advanced profile settings",
+    profileAdvancedHint: "Usually no need to change",
     activeProfileLabel: "Active profile",
     profileNameLabel: "Profile name",
     domainStrategyLabel: "Domain strategy",
@@ -315,8 +356,19 @@ const LOCALES = {
     trafficTypeLabel: "Direction",
     trafficTypeVpn: "Through VPN",
     trafficTypeBypass: "Outside VPN",
-    proxyTitle: "Proxy config",
-    proxyUrlLabel: "VLESS URL",
+    proxyTitle: "VPN access",
+    proxyHelp: "Add a subscription or a single key. AntiGoblin detects the protocol and chooses Xray or sing-box automatically.",
+    activeKeyHelp: "Choose one server. Every “Through VPN” rule uses it.",
+    activeProxyFilterPlaceholder: "Search by name, protocol, or address…",
+    activeProxyCountFmt: "{shown} of {total}",
+    activeProxyNoMatches: "No servers match this search. Clear the filter or try another name / protocol.",
+    subsHelp: "Best option when your provider gives you a subscription URL.",
+    manualKeysHelp: "URIs such as vless://, hysteria2://, tuic:// and others.",
+    manualKeyFormHelp: "Paste the complete link. The fields below are auto-filled and normally do not need manual editing.",
+    subscriptionFormHelp: "Paste the HTTPS subscription URL. AntiGoblin will fetch the servers into the active profile.",
+    proxyAdvancedSummary: "Performance / Mux",
+    proxyAdvancedHint: "Leave unchanged unless needed",
+    proxyUrlLabel: "Proxy URI / sing-box JSON",
     proxyAddressLabel: "Server",
     proxyPortLabel: "Port",
     muxKicker: "Mux / XUDP",
@@ -327,19 +379,23 @@ const LOCALES = {
     muxModeOff: "Off",
     muxModeXudp: "XUDP only",
     previewKicker: "Preview",
-    previewTitle: "Generated routing.json",
-    groupsKicker: "Groups",
-    groupsTitle: "Traffic rules",
-    importBtn: "Import",
-    exportBtn: "Download",
-    repairBtn: "Restart",
+    previewTitle: "Technical routing.json preview",
+    groupsKicker: "Routing",
+    groupsTitle: "What should use the VPN",
+    groupsHelp: "Each group is a list of domains and IP/CIDR ranges. Choose VPN or bypass and enable the group.",
+    groupSummaryFmt: "{domains} domains · {cidrs} CIDR",
+    actionDockTitle: "Ready to apply?",
+    actionDockHint: "Saves the profile and restarts VPN routing.",
+    importBtn: "Import settings",
+    exportBtn: "Export settings",
+    repairBtn: "Restart VPN",
     saveApplyBtn: "Save and apply",
     logoutBtn: "Log out",
     addProfileBtn: "New",
     duplicateProfileBtn: "Duplicate",
     removeProfileBtn: "Delete",
-    saveStateBtn: "Save",
-    importProxyBtn: "Import vless://",
+    saveStateBtn: "Save profile",
+    importProxyBtn: "Import",
     probeProxyBtn: "Probe",
     addGroupBtn: "Add group",
     profileName: "Profile 1",
@@ -391,17 +447,18 @@ const LOCALES = {
     // Multi-key panel
     proxyPanelTitle: "Subscriptions & keys",
     subsHeading: "Subscriptions",
-    manualKeysHeading: "Manual keys",
-    activeKeyHeading: "Active key",
+    manualKeysHeading: "Single keys",
+    activeKeyHeading: "Active server",
     addManualKeyBtn: "+ Manual key",
     addSubscriptionBtn: "+ Subscription",
     probeActiveBtn: "Probe active",
     manualKeyFormTitleNew: "New key",
     manualKeyFormTitleEdit: "Edit key",
-    parseUriBtn: "Parse URI into fields",
+    parseUriBtn: "Add from link / JSON",
+    saveManualFieldsBtn: "Save manual fields",
     keyNameLabel: "Key name",
     keyNamePlaceholder: "My VPN",
-    advancedFieldsSummary: "Advanced fields (auto-filled)",
+    advancedFieldsSummary: "Connection fields — manual editing",
     saveBtn: "Save",
     cancelBtn: "Cancel",
     newSubTitle: "New subscription",
@@ -427,7 +484,7 @@ const LOCALES = {
     subRefreshKeptFmt: "~{n} unchanged",
     subRefreshRemovedFmt: "−{n} removed",
     subRefreshNoChanges: "no changes",
-    manualKeyMissingFmt: "Missing: {fields}. Fill the fields or paste a vless:// / vmess:// / hysteria2:// URI.",
+    manualKeyMissingFmt: "Missing: {fields}. Fill the fields or paste a supported proxy URI.",
     fieldAddress: "address",
     fieldUUID: "UUID",
     fieldPassword: "password",
@@ -447,7 +504,7 @@ const LOCALES = {
     saveStateTitle: "Save state on the router without applying xray changes.",
     saveApplyTitle: "Save state, generate 05_routing.json, back up files, and restart xray.",
     repairTitle: "Rebuild XKeen/xray runtime: xkeen chain and xray process.",
-    importProxyTitle: "Fill proxy fields from a vless:// link.",
+    importProxyTitle: "Import a supported proxy URI or standalone sing-box/Hiddify JSON as a key.",
     probeProxyTitle: "Check from the router whether the host resolves and the TCP port opens.",
     authRequiredMessage: "An active Keenetic web session is required. Sign in to the router web UI and refresh the page.",
     authLoginHint: "You can use either an existing Keenetic web session or sign in here with the same router UI credentials.",
@@ -470,7 +527,7 @@ const LOCALES = {
     outboundsFetchFailed: "outbounds fetch failed",
     routerSessionRequired: "router ui authorization required",
     healthKicker: "Status",
-    healthTitle: "Health and logs",
+    healthTitle: "Diagnostics and logs",
     healthRefreshBtn: "Refresh",
     healthRunning: "running",
     healthStopped: "stopped",
@@ -498,6 +555,7 @@ const LOCALES = {
     dedupCidrsRemoved: "Removed redundant IP/CIDR: {n} (covered by a broader network)",
     stackInfoFetchFailed: "Failed to load stack info",
     stackVersions: "Versions",
+    stackAntiGoblinVer: "AntiGoblin",
     stackXrayVer: "xray", stackSingboxVer: "sing-box", stackKernel: "kernel", stackUptime: "uptime",
     stackVpnSection: "VPN",
     stackVpnHost: "server", stackVpnExitIp: "exit IP", stackVpnSni: "Reality SNI",
@@ -582,6 +640,14 @@ const els = {
   langSelect: document.getElementById("langSelect"),
   heroTitle: document.getElementById("heroTitle"),
   heroLead: document.getElementById("heroLead"),
+  heroVersion: document.getElementById("heroVersion"),
+  setupGuideKicker: document.getElementById("setupGuideKicker"),
+  setupGuideTitle: document.getElementById("setupGuideTitle"),
+  setupGuideLead: document.getElementById("setupGuideLead"),
+  setupProgress: document.getElementById("setupProgress"),
+  setupStepAccess: document.getElementById("setupStepAccess"),
+  setupStepActive: document.getElementById("setupStepActive"),
+  setupStepRules: document.getElementById("setupStepRules"),
   profileKicker: document.getElementById("profileKicker"),
   profileTitle: document.getElementById("profileTitle"),
   activeProfileLabel: document.getElementById("activeProfileLabel"),
@@ -592,7 +658,17 @@ const els = {
   domainStrategy: document.getElementById("domainStrategy"),
   fallbackLabel: document.getElementById("fallbackLabel"),
   fallbackOutbound: document.getElementById("fallbackOutbound"),
+  profileAdvancedSummary: document.getElementById("profileAdvancedSummary"),
+  profileAdvancedHint: document.getElementById("profileAdvancedHint"),
   proxyTitle: document.getElementById("proxyTitle"),
+  proxyHelp: document.getElementById("proxyHelp"),
+  activeKeyHelp: document.getElementById("activeKeyHelp"),
+  subsHelp: document.getElementById("subsHelp"),
+  manualKeysHelp: document.getElementById("manualKeysHelp"),
+  manualKeyFormHelp: document.getElementById("manualKeyFormHelp"),
+  subscriptionFormHelp: document.getElementById("subscriptionFormHelp"),
+  proxyAdvancedSummary: document.getElementById("proxyAdvancedSummary"),
+  proxyAdvancedHint: document.getElementById("proxyAdvancedHint"),
   proxyUrlLabel: document.getElementById("proxyUrlLabel"),
   proxyAddressLabel: document.getElementById("proxyAddressLabel"),
   proxyPortLabel: document.getElementById("proxyPortLabel"),
@@ -622,6 +698,8 @@ const els = {
   subscriptionsList: document.getElementById("subscriptionsList"),
   manualKeysList: document.getElementById("manualKeysList"),
   activeProxyList: document.getElementById("activeProxyList"),
+  activeProxyFilter: document.getElementById("activeProxyFilter"),
+  activeProxyCount: document.getElementById("activeProxyCount"),
   manualKeyForm: document.getElementById("manualKeyForm"),
   manualKeyFormTitle: document.getElementById("manualKeyFormTitle"),
   manualKeyName: document.getElementById("manualKeyName"),
@@ -650,6 +728,7 @@ const els = {
   preview: document.getElementById("routingPreview"),
   groupsKicker: document.getElementById("groupsKicker"),
   groupsTitle: document.getElementById("groupsTitle"),
+  groupsHelp: document.getElementById("groupsHelp"),
   addGroupBtn: document.getElementById("addGroupBtn"),
   addProfileBtn: document.getElementById("addProfileBtn"),
   duplicateProfileBtn: document.getElementById("duplicateProfileBtn"),
@@ -678,7 +757,10 @@ const els = {
   loadLogsBtn: document.getElementById("loadLogsBtn"),
   logsPreview: document.getElementById("logsPreview"),
   logsPreviewWrap: document.getElementById("logsPreviewWrap"),
-  logsCopyBtn: document.getElementById("logsCopyBtn")
+  logsCopyBtn: document.getElementById("logsCopyBtn"),
+  actionDockTitle: document.getElementById("actionDockTitle"),
+  actionDockHint: document.getElementById("actionDockHint"),
+  quickApplyBtn: document.getElementById("quickApplyBtn")
 };
 
 window.addEventListener("error", (event) => {
@@ -706,12 +788,13 @@ function setupPanelCollapse() {
     btn.setAttribute("aria-expanded", "true");
     header.insertBefore(btn, header.firstChild);
     const saved = localStorage.getItem(`panel-collapsed-${id}`);
+    const defaultCollapsed = panel.dataset.defaultCollapsed === "1";
     btn.setAttribute("aria-label", T.panelCollapseAria);
     const apply = (collapsed) => {
       panel.classList.toggle("collapsed", collapsed);
       btn.setAttribute("aria-expanded", String(!collapsed));
     };
-    apply(saved === "1");
+    apply(saved == null ? defaultCollapsed : saved === "1");
     btn.addEventListener("click", (event) => {
       event.stopPropagation();
       const next = !panel.classList.contains("collapsed");
@@ -815,6 +898,23 @@ function bindTopLevel() {
   els.probeProxyBtn.title = T.probeProxyTitle;
   els.logoutBtn.title = T.logoutTitle;
 
+  if (els.quickApplyBtn) {
+    els.quickApplyBtn.addEventListener("click", () => els.saveApplyBtn.click());
+  }
+  document.querySelectorAll(".setup-step[href^='#']").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const target = document.querySelector(link.getAttribute("href"));
+      if (!target) return;
+      const panel = target.classList.contains("panel") ? target : target.closest(".panel");
+      if (panel && panel.classList.contains("collapsed")) {
+        const toggle = panel.querySelector(".panel-collapse-toggle");
+        if (toggle) toggle.click();
+      }
+      event.preventDefault();
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
   els.logoutBtn.addEventListener("click", async () => {
     try {
       await logoutFromRouter();
@@ -882,62 +982,44 @@ function bindTopLevel() {
     const profile = getActiveProfile();
     if (!profile) return;
 
-    // Multi-protocol: vmess and hysteria2 don't fit the legacy "fill form
-    // fields" flow (their schemas differ), so we add them directly as a
-    // proxy entry and close the form.
-    let parsed = null;
-    if (/^(hysteria2|hy2):\/\//i.test(raw)) parsed = parseHysteria2Uri(raw);
-    else if (/^vmess:\/\//i.test(raw)) parsed = parseVmessUri(raw);
-
-    if (parsed) {
-      if (!parsed.ok) {
-        setProbeStatus("error", `${T.importError || "Import error"}: ${parsed.error}`);
-        return;
-      }
-      const name = (els.manualKeyName?.value || "").trim() || parsed.config.name || parsed.config.address;
-      profile.proxies = profile.proxies || [];
-      if (editingProxyId) {
-        // Edit-mode: patch the existing key instead of pushing a duplicate.
-        // Symmetric with the vless flow below (which fills form fields
-        // that saveManualKey then commits to the existing entry).
-        const existing = profile.proxies.find((p) => p.id === editingProxyId);
-        if (existing) {
-          existing.name = name;
-          existing.config = parsed.config;
-        }
-      } else {
-        const newProxy = {
-          id: `proxy-${newId()}`,
-          name,
-          source: "manual",
-          config: parsed.config
-        };
-        profile.proxies.push(newProxy);
-        if (!profile.activeProxyId) profile.activeProxyId = newProxy.id;
-      }
-      // Import committed the buffer — don't let closeManualKeyForm revert.
-      manualKeyFormSnapshot = null;
-      closeManualKeyForm();
-      persistState();
-      renderProxiesPanel(profile);
+    // One dispatcher is used by both manual import and subscriptions. This
+    // prevents the UI from silently dropping protocols that sing-box can
+    // actually run (Trojan/SS/TUIC/AnyTLS/SOCKS/HTTP/SSH/Naive/Hysteria).
+    const parsed = parseProxyUri(raw);
+    if (!parsed.ok) {
+      setProbeStatus("error", `${T.importError || "Ошибка импорта"}: ${parsed.error}`);
       return;
     }
 
-    // Vless URL that didn't hit the multi-key path above: use the same
-    // wider parser (parseVlessUri) so vless-tls / vless-none also work
-    // from the manual form, not only through subscription.
-    const vlessParsed = parseVlessUri(raw);
-    if (!vlessParsed.ok) {
-      setProbeStatus("error", `${T.importError || "Ошибка импорта"}: ${vlessParsed.error}`);
+    const config = normalizeProxyConfig(parsed.config);
+    if (!config.address || !sanitizeProxyPort(config.port) || !proxyConfigHasRequiredAuth(config)) {
+      setProbeStatus("error", `${T.importError || "Ошибка импорта"}: incomplete ${config.protocol || "proxy"} URI`);
       return;
     }
-    profile.proxyConfig = {
-      ...normalizeProxyConfig(profile.proxyConfig),
-      ...vlessParsed.config
-    };
+    config.port = sanitizeProxyPort(config.port);
+    const name = (els.manualKeyName?.value || "").trim() || config.name || config.address;
+    profile.proxies = profile.proxies || [];
+    if (editingProxyId) {
+      const existing = profile.proxies.find((p) => p.id === editingProxyId);
+      if (existing) {
+        existing.name = name;
+        existing.config = config;
+      }
+    } else {
+      const newProxy = {
+        id: `proxy-${newId()}`,
+        name,
+        source: "manual",
+        config
+      };
+      profile.proxies.push(newProxy);
+      if (!profile.activeProxyId) profile.activeProxyId = newProxy.id;
+    }
+    // Import committed the buffer — don't let closeManualKeyForm revert.
+    manualKeyFormSnapshot = null;
+    closeManualKeyForm();
     persistState();
-    renderProxyConfig(profile);
-    setProbeStatus("success", T.loginImported);
+    renderProxiesPanel(profile);
   });
 
   els.probeProxyBtn.addEventListener("click", async () => {
@@ -1003,6 +1085,13 @@ function bindTopLevel() {
       const id = btn.dataset.id;
       if (btn.dataset.act === "edit-proxy") openManualKeyForm(id);
       else if (btn.dataset.act === "delete-proxy") deleteProxy(id);
+    });
+  }
+
+  if (els.activeProxyFilter) {
+    els.activeProxyFilter.addEventListener("input", () => {
+      const profile = getActiveProfile();
+      if (profile) renderActiveProxyList(profile);
     });
   }
 
@@ -1205,6 +1294,7 @@ function bindTopLevel() {
 
   els.saveApplyBtn.addEventListener("click", async () => {
     els.saveApplyBtn.disabled = true;
+    if (els.quickApplyBtn) els.quickApplyBtn.disabled = true;
     const toast = showToast(T.toastSavingApplying || "Сохранение и применение...", { kind: "progress" });
     // Save is a 4-step pipeline. Each step can partially succeed on the
     // router; if step 3 fails, step 1+2 already committed. Tag the current
@@ -1239,6 +1329,7 @@ function bindTopLevel() {
       // user sits with a greyed-out button for ~40s after the toast
       // already said success, and thinks the apply is still in flight.
       els.saveApplyBtn.disabled = false;
+      if (els.quickApplyBtn) els.quickApplyBtn.disabled = false;
       renderHealth().catch(() => {});
       renderStackInfo().catch(() => {});
       return;
@@ -1252,6 +1343,7 @@ function bindTopLevel() {
       pushDebug(`saveApply failed at step=${step}: ${error.message}`);
     } finally {
       els.saveApplyBtn.disabled = false;
+      if (els.quickApplyBtn) els.quickApplyBtn.disabled = false;
     }
   });
 }
@@ -1306,7 +1398,7 @@ async function repairRemoteRuntime() {
 
 function healthSeverity(status) {
   if (!status || status === "ok") return "ok";
-  if (status.endsWith("_critical") || status === "xray_down") return "critical";
+  if (status.endsWith("_critical") || status === "xray_down" || status === "singbox_down") return "critical";
   if (status.endsWith("_warn")) return "warn";
   return "ok";
 }
@@ -1647,6 +1739,7 @@ async function renderStackInfo() {
     return;
   }
   const v = payload.versions || {};
+  if (els.heroVersion) els.heroVersion.textContent = v.antigoblin ? `v${v.antigoblin}` : "dev";
   const vpn = payload.vpn || {};
   const net = payload.network || {};
   const xk = payload.xkeen || {};
@@ -1669,6 +1762,7 @@ async function renderStackInfo() {
     {
       title: T.stackVersions || "Версии",
       rows: [
+        [T.stackAntiGoblinVer || "AntiGoblin", v.antigoblin || "—"],
         [T.stackXrayVer || "xray", v.xray || "—"],
         [T.stackSingboxVer || "sing-box", v.singbox || "—"],
         [T.stackKernel || "ядро", `${v.kernel || ""} (${v.hostname || ""})`.trim()],
@@ -1882,7 +1976,13 @@ function renderGroups() {
       <div class="group-head">
         <div class="group-head-main">
           <button class="collapse-toggle" type="button" aria-expanded="true">▾</button>
-          <input class="group-name" type="text" placeholder="${escapeHtml(T.newGroup)}">
+          <div class="group-title-stack">
+            <input class="group-name" type="text" placeholder="${escapeHtml(T.newGroup)}">
+            <div class="group-summary">
+              <span class="route-badge ${group.outboundTag === "bypass" ? "bypass" : "vpn"}">${escapeHtml(group.outboundTag === "bypass" ? T.trafficTypeBypass : T.trafficTypeVpn)}</span>
+              <span class="group-summary-count">${escapeHtml(formatMessage(T.groupSummaryFmt || "{domains} domains · {cidrs} CIDR", { domains: (group.domains || []).length, cidrs: (group.cidrs || []).length }))}</span>
+            </div>
+          </div>
         </div>
         <div class="group-head-actions">
           <label class="toggle">
@@ -1928,6 +2028,21 @@ function renderGroups() {
     const domainsEl = card.querySelector(".group-domains");
     const cidrsEl = card.querySelector(".group-cidrs");
     const removeBtn = card.querySelector(".remove-group");
+    const routeBadgeEl = card.querySelector(".route-badge");
+    const groupSummaryCountEl = card.querySelector(".group-summary-count");
+    const updateGroupSummary = () => {
+      const domains = splitLinesOrCsv(domainsEl.value).length;
+      const cidrs = splitLinesOrCsv(cidrsEl.value).length;
+      if (routeBadgeEl) {
+        const bypass = outboundEl.value === "bypass";
+        routeBadgeEl.classList.toggle("bypass", bypass);
+        routeBadgeEl.classList.toggle("vpn", !bypass);
+        routeBadgeEl.textContent = bypass ? T.trafficTypeBypass : T.trafficTypeVpn;
+      }
+      if (groupSummaryCountEl) {
+        groupSummaryCountEl.textContent = formatMessage(T.groupSummaryFmt || "{domains} domains · {cidrs} CIDR", { domains, cidrs });
+      }
+    };
 
     // Restore expanded/collapsed state per group id so re-render (from
     // add/remove/rename group) doesn't collapse everything again.
@@ -1952,9 +2067,9 @@ function renderGroups() {
     nameEl.addEventListener("input", () => updateGroup(group.id, { name: nameEl.value }));
     noteEl.addEventListener("input", () => updateGroup(group.id, { note: noteEl.value }));
     enabledEl.addEventListener("change", () => updateGroup(group.id, { enabled: enabledEl.checked }));
-    outboundEl.addEventListener("change", () => updateGroup(group.id, { outboundTag: outboundEl.value }));
-    domainsEl.addEventListener("input", () => updateGroup(group.id, { domains: splitLinesOrCsv(domainsEl.value) }));
-    cidrsEl.addEventListener("input", () => updateGroup(group.id, { cidrs: splitLinesOrCsv(cidrsEl.value) }));
+    outboundEl.addEventListener("change", () => { updateGroup(group.id, { outboundTag: outboundEl.value }); updateGroupSummary(); });
+    domainsEl.addEventListener("input", () => { updateGroup(group.id, { domains: splitLinesOrCsv(domainsEl.value) }); updateGroupSummary(); });
+    cidrsEl.addEventListener("input", () => { updateGroup(group.id, { cidrs: splitLinesOrCsv(cidrsEl.value) }); updateGroupSummary(); });
     domainsEl.addEventListener("blur", () => {
       const raw = splitLinesOrCsv(domainsEl.value);
       const part = partitionList(raw, looksLikeDomain);
@@ -2102,6 +2217,7 @@ function updateGroup(id, patch) {
   profile.groups = profile.groups.map((group) => group.id === id ? { ...group, ...patch } : group);
   persistState();
   renderPreview();
+  renderQuickStart(profile);
 }
 
 function persistAndRender() {
@@ -2293,12 +2409,61 @@ function bindProxyField(element, key, transform = (value) => value) {
   element.addEventListener("input", () => {
     const profile = getActiveProfile();
     if (!profile) return;
-    profile.proxyConfig = {
+    let next = {
       ...normalizeProxyConfig(profile.proxyConfig),
       [key]: transform(element.value)
     };
+    next = syncRawSingboxOutboundField(next, key);
+    profile.proxyConfig = next;
     persistState();
   });
+}
+
+// Raw Hiddify/sing-box imports keep the provider outbound so extension fields
+// survive. When the user edits the common fields in AntiGoblin's form, mirror
+// those edits back into the raw object; otherwise the card would display the
+// new address/SNI while buildSingboxProxyOutbound() still dialled the old one.
+function syncRawSingboxOutboundField(config, key) {
+  const value = config?.[key];
+  let next = config;
+
+  if (config?.singboxOutbound && typeof config.singboxOutbound === "object") {
+    const raw = JSON.parse(JSON.stringify(config.singboxOutbound));
+
+    if (key === "address") raw.server = value;
+    else if (key === "port") raw.server_port = Number(value) || value;
+    else if (key === "uuid") raw.uuid = value;
+    else if (key === "flow") raw.flow = value;
+    else if (["serverName", "fingerprint", "publicKey", "shortId"].includes(key)) {
+      raw.tls = raw.tls && typeof raw.tls === "object" ? raw.tls : { enabled: true };
+      if (key === "serverName") raw.tls.server_name = value;
+      if (key === "fingerprint") {
+        if (value) raw.tls.utls = { ...(raw.tls.utls || {}), enabled: true, fingerprint: value };
+        else if (raw.tls.utls) delete raw.tls.utls.fingerprint;
+      }
+      if (key === "publicKey" || key === "shortId") {
+        raw.tls.reality = raw.tls.reality && typeof raw.tls.reality === "object"
+          ? raw.tls.reality
+          : { enabled: true };
+        if (key === "publicKey") raw.tls.reality.public_key = value;
+        if (key === "shortId") raw.tls.reality.short_id = value;
+      }
+    }
+    next = { ...next, singboxOutbound: raw };
+  }
+
+  if (config?.singboxEndpoint && typeof config.singboxEndpoint === "object") {
+    const endpoint = JSON.parse(JSON.stringify(config.singboxEndpoint));
+    const peer = Array.isArray(endpoint.peers) ? endpoint.peers[0] : null;
+    if (peer && typeof peer === "object") {
+      if (key === "address") peer.address = value;
+      else if (key === "port") peer.port = Number(value) || value;
+    }
+    if (key === "privateKey") endpoint.private_key = value;
+    next = { ...next, singboxEndpoint: endpoint };
+  }
+
+  return next;
 }
 
 function bindMuxField(element, key, transform = (value) => value, forcedEvent) {
@@ -2391,7 +2556,15 @@ function securityBadge(config) {
   const sec = (config.security || "none").toLowerCase();
   const net = (config.network || "tcp").toLowerCase();
   const proto = (config.protocol || "vless").toLowerCase();
+  if (config.engine === "singbox" && (config.singboxOutbound || config.singboxEndpoint)) return `${proto}+sing-box`;
   if (proto === "hysteria2") return "hy2+tls+quic";
+  if (proto === "hysteria") return "hy+tls+quic";
+  if (proto === "tuic") return "tuic+tls+quic";
+  if (proto === "anytls") return "anytls+tls";
+  if (proto === "shadowsocks") return `ss+${config.method || "cipher"}`;
+  if (proto === "naive") return `naive+${config.quic ? "quic" : "https"}`;
+  if (proto === "http") return config.security === "tls" ? "https-connect" : "http-connect";
+  if (proto === "socks") return `socks${config.socksVersion || "5"}`;
   return `${proto}+${sec}+${net}`;
 }
 
@@ -2400,6 +2573,29 @@ function renderProxiesPanel(profile) {
   renderSubscriptionsList(profile);
   renderManualKeysList(profile);
   renderActiveProxyList(profile);
+  renderQuickStart(profile);
+}
+
+function renderQuickStart(profile) {
+  if (!profile) return;
+  const proxies = Array.isArray(profile.proxies) ? profile.proxies : [];
+  const hasAccess = proxies.length > 0;
+  const hasActive = !!profile.activeProxyId && proxies.some((p) => p.id === profile.activeProxyId);
+  const hasRules = (profile.groups || []).some((g) => g.enabled && ((g.domains || []).length || (g.cidrs || []).length));
+  const states = [
+    [els.setupStepAccess, hasAccess],
+    [els.setupStepActive, hasActive],
+    [els.setupStepRules, hasRules]
+  ];
+  let done = 0;
+  for (const [node, complete] of states) {
+    if (!node) continue;
+    node.classList.toggle("complete", !!complete);
+    if (complete) done += 1;
+  }
+  if (els.setupProgress) {
+    els.setupProgress.textContent = formatMessage(T.setupProgressFmt || "{done} / 3", { done });
+  }
 }
 
 function renderSubscriptionsList(profile) {
@@ -2530,6 +2726,15 @@ function renderActiveProxyList(profile) {
   if (!els.activeProxyList) return;
   els.activeProxyList.innerHTML = "";
   const proxies = profile.proxies || [];
+  const filter = (els.activeProxyFilter?.value || "").trim().toLowerCase();
+  const visibleProxies = filter ? proxies.filter((p) => {
+    const sub = (profile.subscriptions || []).find((s) => s.id === p.source);
+    const haystack = [p.name, p.config?.address, p.config?.protocol, securityBadge(p.config || {}), sub?.name].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(filter);
+  }) : proxies;
+  if (els.activeProxyCount) {
+    els.activeProxyCount.textContent = formatMessage(T.activeProxyCountFmt || "{shown} / {total}", { shown: visibleProxies.length, total: proxies.length });
+  }
   if (proxies.length === 0) {
     const li = document.createElement("li");
     li.className = "card-empty";
@@ -2537,8 +2742,15 @@ function renderActiveProxyList(profile) {
     els.activeProxyList.appendChild(li);
     return;
   }
+  if (visibleProxies.length === 0) {
+    const li = document.createElement("li");
+    li.className = "card-empty";
+    li.textContent = T.activeProxyNoMatches || "No servers match this search.";
+    els.activeProxyList.appendChild(li);
+    return;
+  }
   const activeId = profile.activeProxyId;
-  for (const p of proxies) {
+  for (const p of visibleProxies) {
     const sub = (profile.subscriptions || []).find((s) => s.id === p.source);
     const srcLabel = sub ? sub.name : (T.manualKeySrc || "manual");
     const li = document.createElement("li");
@@ -2644,15 +2856,15 @@ function saveManualKey() {
   if (!profile) return;
   const config = normalizeProxyConfig(profile.proxyConfig);
   const proto = (config.protocol || "vless").toLowerCase();
-  const needsSecret = proto === "hysteria2" ? !!config.password : !!config.uuid;
+  const needsSecret = proxyConfigHasRequiredAuth(config);
   const port = sanitizeProxyPort(config.port);
   if (!config.address || !needsSecret || !port) {
-    const secretLabel = proto === "hysteria2" ? (T.fieldPassword || "password") : (T.fieldUUID || "UUID");
+    const secretLabel = proxyAuthLabel(config);
     const what = !config.address ? (T.fieldAddress || "address")
                : !needsSecret ? secretLabel
                : (T.fieldPortRange || "port (1..65535)");
     setProbeStatus("error", formatMessage(
-      T.manualKeyMissingFmt || "Missing: {fields}. Fill the fields or paste a vless:// / vmess:// / hysteria2:// URI.",
+      T.manualKeyMissingFmt || "Missing: {fields}. Fill the fields or paste a supported proxy URI.",
       { fields: what }
     ));
     return;
@@ -2707,6 +2919,7 @@ function setActiveProxy(proxyId) {
   profile.activeProxyId = proxyId;
   persistState();
   renderActiveProxyList(profile);
+  renderQuickStart(profile);
 }
 
 async function fetchSubscriptionViaBackend(url) {
@@ -2842,10 +3055,9 @@ async function refreshSubscription(subId) {
       return;
     }
 
-    // Diff by (protocol:address:port/uuid|password). Include protocol and
-    // secret so two hy2 keys sharing address:port aren't collapsed into
-    // "kept" — that would silently drop the second key on every refresh.
-    const keyOf = (c) => `${c.protocol || "vless"}:${c.address}:${c.port}/${c.uuid || c.password || ""}`;
+    // Diff by protocol + endpoint + auth identity. Username/method matter
+    // for protocols such as HTTP/SOCKS/SSH/Shadowsocks where UUID is absent.
+    const keyOf = (c) => `${c.protocol || "vless"}:${c.address}:${c.port}/${c.uuid || c.username || ""}/${c.password || ""}/${c.method || ""}`;
     const oldProxies = (profile.proxies || []).filter((p) => p.source === subId);
     const oldByKey = new Map(oldProxies.map((p) => [keyOf(p.config), p]));
     const newProxies = [];
@@ -2932,20 +3144,31 @@ function deleteSubscription(subId) {
   renderProxiesPanel(profile);
 }
 
-// Localhost port where sing-box exposes a mixed (SOCKS5) inbound for xray to
-// forward TCP traffic into when the active proxy is hysteria2. xray treats
-// the relay as a normal SOCKS5 upstream; sing-box does the real tunneling.
+// Localhost port where sing-box exposes a mixed (SOCKS5) inbound for xray.
+// Xray keeps owning transparent TCP interception and the stable
+// "vless-reality" routing tag, while sing-box can own the actual upstream
+// protocol. This lets one routing stack support Xray-native VLESS/VMess and
+// sing-box-native protocols without duplicating all iptables/ipset logic.
 const SINGBOX_XRAY_RELAY_PORT = 61225;
+
+function usesSingboxProxy(config) {
+  const protocol = String(config?.protocol || "vless").toLowerCase();
+  if (config?.engine === "singbox"
+      || (config?.singboxOutbound && typeof config.singboxOutbound === "object")
+      || (config?.singboxEndpoint && typeof config.singboxEndpoint === "object")) return true;
+  return protocol !== "vless" && protocol !== "vmess";
+}
 
 function buildOutboundsDocument(profile) {
   const config = getActiveProxyConfig(profile);
   const mux = buildMuxObject(profile.muxConfig);
   const protocol = (config.protocol || "vless").toLowerCase();
 
-  // Hysteria2 is not xray-native. We keep the "vless-reality" tag (routing
-  // rules reference it everywhere) but route the outbound through sing-box
-  // via SOCKS5. sing-box owns the real hysteria2 outbound.
-  if (protocol === "hysteria2") {
+  // Keep the historical outbound tag because routing.json, the runtime
+  // scripts and existing state files already reference it. For protocols
+  // Xray doesn't own, the tagged outbound is simply a loopback SOCKS hop to
+  // sing-box; sing-box then dials the real server.
+  if (usesSingboxProxy(config)) {
     return {
       outbounds: [
         {
@@ -2962,8 +3185,6 @@ function buildOutboundsDocument(profile) {
     };
   }
 
-  // user block differs by protocol; xray keeps the outbound tag "vless-reality"
-  // for compatibility with existing routing.json rules even when we ship vmess.
   const userBlock = protocol === "vmess"
     ? { id: config.uuid, alterId: Number(config.alterId) || 0, security: "auto", level: 0 }
     : { id: config.uuid, encryption: "none", flow: config.flow || "", level: 0 };
@@ -2993,15 +3214,215 @@ function buildOutboundsDocument(profile) {
   };
 }
 
+function buildSingboxTls(config, forceEnabled = false) {
+  const security = String(config.security || "none").toLowerCase();
+  if (!forceEnabled && security !== "tls" && security !== "reality") return null;
+
+  const tls = {
+    enabled: true,
+    server_name: config.serverName || config.address || "",
+    insecure: !!config.insecure
+  };
+  if (Array.isArray(config.alpn) && config.alpn.length) tls.alpn = config.alpn.slice();
+  if (config.pinSHA256) tls.certificate_public_key_sha256 = [config.pinSHA256];
+
+  // Do not force uTLS when a provider did not request a fingerprint: this
+  // keeps the config valid on smaller builds compiled without with_utls.
+  const fp = String(config.fingerprint || "").trim().toLowerCase();
+  if (fp && fp !== "random") {
+    tls.utls = { enabled: true, fingerprint: fp };
+  }
+  if (security === "reality" && config.publicKey) {
+    tls.reality = {
+      enabled: true,
+      public_key: config.publicKey,
+      short_id: config.shortId || ""
+    };
+  }
+  return tls;
+}
+
+function buildSingboxV2rayTransport(config) {
+  const network = String(config.network || "tcp").toLowerCase();
+  if (network === "ws" || network === "websocket") {
+    const transport = { type: "ws", path: config.path || "/" };
+    if (config.host) transport.headers = { Host: config.host };
+    return transport;
+  }
+  if (network === "grpc") {
+    return { type: "grpc", service_name: config.serviceName || config.path || "" };
+  }
+  if (network === "httpupgrade") {
+    const transport = { type: "httpupgrade", path: config.path || "/" };
+    if (config.host) transport.host = config.host;
+    return transport;
+  }
+  if (network === "http" || network === "h2") {
+    const transport = { type: "http", path: config.path || "/" };
+    if (config.host) transport.host = [config.host];
+    return transport;
+  }
+  return null;
+}
+
+function buildSingboxProxyEndpoint(config) {
+  if (!config?.singboxEndpoint || typeof config.singboxEndpoint !== "object") return null;
+  const raw = JSON.parse(JSON.stringify(config.singboxEndpoint));
+  raw.tag = "proxy";
+  return raw;
+}
+
+function buildSingboxProxyOutbound(config) {
+  if (config.singboxOutbound && typeof config.singboxOutbound === "object") {
+    // Raw sing-box/Hiddify JSON import path. Keep provider-specific fields
+    // intact (XHTTP/Mieru/ShadowTLS extensions, QUIC tuning, etc.) and only
+    // normalize the tag so AntiGoblin's fixed route.final can target it.
+    const raw = JSON.parse(JSON.stringify(config.singboxOutbound));
+    raw.tag = "proxy";
+    return raw;
+  }
+  const protocol = String(config.protocol || "").toLowerCase();
+  const common = {
+    type: protocol,
+    tag: "proxy",
+    server: config.address,
+    server_port: Number(config.port)
+  };
+
+  if (protocol === "hysteria2") {
+    const out = {
+      ...common,
+      password: config.password || "",
+      tls: buildSingboxTls(config, true)
+    };
+    if (Number(config.upMbps) > 0) out.up_mbps = Number(config.upMbps);
+    if (Number(config.downMbps) > 0) out.down_mbps = Number(config.downMbps);
+    if (config.obfs) out.obfs = { type: config.obfs, password: config.obfsPassword || "" };
+    return out;
+  }
+
+  if (protocol === "hysteria") {
+    const out = {
+      ...common,
+      auth_str: config.password || "",
+      up_mbps: Number(config.upMbps),
+      down_mbps: Number(config.downMbps),
+      tls: buildSingboxTls(config, true)
+    };
+    if (config.obfsPassword || config.obfs) out.obfs = config.obfsPassword || config.obfs;
+    return out;
+  }
+
+  if (protocol === "tuic") {
+    const out = {
+      ...common,
+      uuid: config.uuid || "",
+      password: config.password || "",
+      congestion_control: config.congestionControl || "cubic",
+      udp_relay_mode: config.udpRelayMode || "native",
+      zero_rtt_handshake: !!config.zeroRtt,
+      tls: buildSingboxTls(config, true)
+    };
+    if (config.heartbeat) out.heartbeat = config.heartbeat;
+    return out;
+  }
+
+  if (protocol === "trojan") {
+    const out = {
+      ...common,
+      password: config.password || "",
+      tls: buildSingboxTls(config, true)
+    };
+    const transport = buildSingboxV2rayTransport(config);
+    if (transport) out.transport = transport;
+    return out;
+  }
+
+  if (protocol === "shadowsocks") {
+    const out = {
+      ...common,
+      method: config.method || "aes-256-gcm",
+      password: config.password || ""
+    };
+    if (config.plugin) out.plugin = config.plugin;
+    if (config.pluginOpts) out.plugin_opts = config.pluginOpts;
+    return out;
+  }
+
+  if (protocol === "anytls") {
+    return {
+      ...common,
+      password: config.password || "",
+      tls: buildSingboxTls(config, true)
+    };
+  }
+
+  if (protocol === "socks") {
+    const out = {
+      ...common,
+      type: "socks",
+      version: String(config.socksVersion || "5")
+    };
+    if (config.username) out.username = config.username;
+    if (config.password) out.password = config.password;
+    return out;
+  }
+
+  if (protocol === "http") {
+    const out = { ...common, type: "http" };
+    if (config.username) out.username = config.username;
+    if (config.password) out.password = config.password;
+    if (config.path) out.path = config.path;
+    if (String(config.security || "none").toLowerCase() === "tls") {
+      out.tls = buildSingboxTls(config, true);
+    }
+    return out;
+  }
+
+  if (protocol === "ssh") {
+    const out = {
+      ...common,
+      type: "ssh",
+      user: config.username || "root"
+    };
+    if (config.password) out.password = config.password;
+    if (config.privateKey) out.private_key = config.privateKey;
+    if (config.privateKeyPath) out.private_key_path = config.privateKeyPath;
+    if (config.privateKeyPassphrase) out.private_key_passphrase = config.privateKeyPassphrase;
+    return out;
+  }
+
+  if (protocol === "naive") {
+    // Naive exposes a deliberately smaller TLS option set than the generic
+    // sing-box TLS client. Keep URI imports conservative; raw Hiddify JSON
+    // still bypasses this builder and preserves provider-specific TLS fields.
+    const naiveTls = {
+      enabled: true,
+      server_name: config.serverName || config.address || ""
+    };
+    const out = {
+      ...common,
+      type: "naive",
+      username: config.username || "",
+      password: config.password || "",
+      quic: !!config.quic,
+      tls: naiveTls
+    };
+    if (config.extraHeaders && typeof config.extraHeaders === "object") {
+      out.extra_headers = { ...config.extraHeaders };
+    }
+    return out;
+  }
+
+  throw new Error(`Unsupported sing-box protocol: ${protocol || "empty"}`);
+}
+
 // Build the sing-box config that matches the currently selected proxy.
-// - For vless/vmess (xray-native): keeps the existing shape (UDP TPROXY ->
-//   shadowsocks-relay -> xray). xray does the real tunneling.
-// - For hysteria2: adds a mixed inbound on 127.0.0.1:SINGBOX_XRAY_RELAY_PORT
-//   (so xray can SOCKS into us) and a hysteria2 outbound to the server.
-//   All routes terminate at hysteria2.
+// VLESS/VMess retain the proven UDP -> SS relay -> Xray path. Every other
+// supported protocol gets a real sing-box outbound plus a loopback mixed
+// inbound so Xray can hand transparent TCP traffic to it as SOCKS5.
 function buildSingboxDocument(profile) {
   const config = getActiveProxyConfig(profile);
-  const protocol = (config.protocol || "vless").toLowerCase();
 
   const base = {
     log: { level: "warn", timestamp: true },
@@ -3021,38 +3442,19 @@ function buildSingboxDocument(profile) {
     }
   };
 
-  if (protocol === "hysteria2") {
+  if (usesSingboxProxy(config)) {
     base.inbounds.push({
       type: "mixed",
       tag: "xray-relay",
       listen: "127.0.0.1",
       listen_port: SINGBOX_XRAY_RELAY_PORT
     });
-    const hy2 = {
-      type: "hysteria2",
-      tag: "proxy",
-      server: config.address,
-      server_port: Number(config.port),
-      password: config.password || "",
-      tls: {
-        enabled: true,
-        server_name: config.serverName || config.address,
-        insecure: !!config.insecure
-      }
-    };
-    if (Array.isArray(config.alpn) && config.alpn.length) {
-      hy2.tls.alpn = config.alpn.slice();
-    }
-    if (config.obfs) {
-      hy2.obfs = { type: config.obfs, password: config.obfsPassword || "" };
-    }
-    if (config.pinSHA256) {
-      hy2.tls.certificate_pin_sha256 = [config.pinSHA256];
-    }
-    base.outbounds.push(hy2);
+    const endpoint = buildSingboxProxyEndpoint(config);
+    if (endpoint) base.endpoints = [endpoint];
+    else base.outbounds.push(buildSingboxProxyOutbound(config));
   } else {
-    // Default: relay UDP into xray's shadowsocks listener so it can tunnel
-    // via the active VLESS/VMess outbound (same path that worked for months).
+    // Relay intercepted UDP into Xray's local Shadowsocks listener. Xray
+    // then sends it through the active VLESS/VMess outbound.
     base.outbounds.push({
       type: "shadowsocks",
       tag: "proxy",
@@ -3094,6 +3496,9 @@ function extractMuxConfig(doc) {
 function createDefaultProxyConfig() {
   return {
     protocol: "vless",
+    engine: "auto",
+    singboxOutbound: null,
+    singboxEndpoint: null,
     address: "",
     port: "",
     uuid: "",
@@ -3119,8 +3524,27 @@ function createDefaultProxyConfig() {
     // shortcut so older keys still work, but the full extra wins when set.
     xPaddingBytes: "",
     xhttpExtra: null,
-    // Hysteria2-specific (UDP/QUIC protocol, NOT xray-native)
-    password: "",         // auth secret (vless/vmess use uuid, hy2 uses password)
+    // Shared sing-box protocols. These fields intentionally live in the
+    // same normalized object so imported Hiddify-style share links survive
+    // localStorage/state.json round-trips without per-protocol schemas.
+    password: "",
+    username: "",
+    method: "",
+    plugin: "",
+    pluginOpts: "",
+    socksVersion: "5",
+    congestionControl: "cubic",
+    udpRelayMode: "native",
+    zeroRtt: false,
+    heartbeat: "",
+    upMbps: 0,
+    downMbps: 0,
+    quic: false,
+    privateKey: "",
+    privateKeyPath: "",
+    privateKeyPassphrase: "",
+    extraHeaders: null,
+    // Hysteria/Hysteria2-specific
     obfs: "",             // "salamander" or empty
     obfsPassword: "",
     insecure: false,      // skip TLS cert verify
@@ -3154,6 +3578,31 @@ function normalizeProxyConfig(config) {
     ...createDefaultProxyConfig(),
     ...(config || {})
   };
+}
+
+function proxyConfigHasRequiredAuth(config) {
+  const cfg = normalizeProxyConfig(config);
+  if ((cfg.singboxOutbound && typeof cfg.singboxOutbound === "object")
+      || (cfg.singboxEndpoint && typeof cfg.singboxEndpoint === "object")) return true;
+  const proto = String(cfg.protocol || "vless").toLowerCase();
+  if (proto === "vless" || proto === "vmess") return !!cfg.uuid;
+  if (proto === "tuic") return !!cfg.uuid && !!cfg.password;
+  if (["hysteria2", "hysteria", "trojan", "shadowsocks", "anytls", "naive"].includes(proto)) {
+    return !!cfg.password;
+  }
+  if (proto === "ssh") return !!(cfg.password || cfg.privateKey || cfg.privateKeyPath);
+  // SOCKS and HTTP CONNECT may intentionally have no authentication.
+  if (proto === "socks" || proto === "http") return true;
+  return false;
+}
+
+function proxyAuthLabel(config) {
+  const proto = String(config?.protocol || "vless").toLowerCase();
+  if (proto === "vless" || proto === "vmess") return T.fieldUUID || "UUID";
+  if (proto === "tuic") return `${T.fieldUUID || "UUID"} + ${T.fieldPassword || "password"}`;
+  if (proto === "ssh") return T.fieldPassword || "password/private key";
+  if (proto === "socks" || proto === "http") return T.fieldAddress || "address";
+  return T.fieldPassword || "password";
 }
 
 // Parse a single vless:// URI per the standard URL shape
@@ -3326,7 +3775,7 @@ function parseVmessUri(uri) {
 // Format: hysteria2://password@host:port?sni=...&obfs=salamander&obfs-password=...
 //                                          &insecure=0|1&pinSHA256=...&alpn=h3#name
 // Hysteria2 is UDP/QUIC, not xray-native — applying it requires sing-box.
-// Phase A only parses + displays; activation is gated separately.
+// Hysteria2 is activated through the shared sing-box bridge path.
 function parseHysteria2Uri(uri) {
   if (typeof uri !== "string") return { ok: false, error: "not a string" };
   const trimmed = uri.trim();
@@ -3406,25 +3855,583 @@ function parseHysteria2Uri(uri) {
       obfs: params.obfs || "",
       obfsPassword: params["obfs-password"] || params.obfsPassword || "",
       insecure: params.insecure === "1" || params.insecure === "true",
-      pinSHA256: params.pinSHA256 || params["pin-sha256"] || ""
+      pinSHA256: params.pinSHA256 || params["pin-sha256"] || "",
+      upMbps: parseBandwidthMbps(params.upmbps || params.up_mbps || params.up || ""),
+      downMbps: parseBandwidthMbps(params.downmbps || params.down_mbps || params.down || "")
     }
   };
 }
 
-// Parse a subscription body (already base64-decoded by caller).
-// Each non-empty line is a URI; unknown schemes are skipped silently.
+
+function safeDecodeURIComponent(value) {
+  try { return decodeURIComponent(String(value || "")); }
+  catch { return String(value || ""); }
+}
+
+function decodeBase64UrlText(value) {
+  let b64 = String(value || "").trim().replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  return atob(b64);
+}
+
+function queryValue(params, ...names) {
+  for (const name of names) {
+    if (params.has(name)) return params.get(name) || "";
+  }
+  return "";
+}
+
+function queryBool(params, ...names) {
+  const raw = queryValue(params, ...names).trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function parseBandwidthMbps(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const low = raw.toLowerCase();
+  if (low.includes("gbps")) return Math.round(n * 1000);
+  if (low.includes("kbps")) return Math.max(1, Math.round(n / 1000));
+  return Math.round(n);
+}
+
+function parseGenericShareUrl(uri, allowedSchemes) {
+  if (typeof uri !== "string") return { ok: false, error: "not a string" };
+  const trimmed = uri.trim();
+  let url;
+  try { url = new URL(trimmed); }
+  catch (err) { return { ok: false, error: `invalid URI: ${err.message}` }; }
+  const scheme = url.protocol.replace(/:$/, "").toLowerCase();
+  if (!allowedSchemes.includes(scheme)) return { ok: false, error: `unsupported scheme: ${scheme}` };
+  const defaultPorts = {
+    trojan: 443, anytls: 443, "naive+https": 443, "naive+quic": 443,
+    http: 80, https: 443, ssh: 22, socks: 1080, socks5: 1080,
+    socks4: 1080, socks4a: 1080
+  };
+  const port = Number.parseInt(url.port || defaultPorts[scheme] || "", 10);
+  if (!url.hostname || !Number.isFinite(port) || port < 1 || port > 65535) {
+    return { ok: false, error: "invalid host or port" };
+  }
+  return {
+    ok: true,
+    url,
+    scheme,
+    host: url.hostname.replace(/^\[|\]$/g, ""),
+    port,
+    name: safeDecodeURIComponent(url.hash.replace(/^#/, "")),
+    username: safeDecodeURIComponent(url.username),
+    password: safeDecodeURIComponent(url.password)
+  };
+}
+
+function commonTlsConfig(parsed, defaultSecurity = "tls") {
+  const params = parsed.url.searchParams;
+  const security = (queryValue(params, "security") || defaultSecurity).toLowerCase();
+  const alpnRaw = queryValue(params, "alpn");
+  return {
+    security,
+    serverName: queryValue(params, "sni", "peer", "serverName", "servername") || parsed.host,
+    fingerprint: queryValue(params, "fp", "fingerprint"),
+    publicKey: queryValue(params, "pbk", "publicKey"),
+    shortId: queryValue(params, "sid", "shortId"),
+    alpn: alpnRaw ? alpnRaw.split(",").map((x) => x.trim()).filter(Boolean) : [],
+    insecure: queryBool(params, "insecure", "allowInsecure", "allow_insecure", "skip-cert-verify", "skip_cert_verify"),
+    pinSHA256: queryValue(params, "pinSHA256", "pin-sha256", "pin_sha256", "certificate_public_key_sha256")
+  };
+}
+
+function shareSecret(parsed) {
+  if (!parsed.password) return parsed.username;
+  return `${parsed.username}:${parsed.password}`;
+}
+
+function parseTrojanUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["trojan"]);
+  if (!parsed.ok) return parsed;
+  const secret = shareSecret(parsed);
+  if (!secret) return { ok: false, error: "missing trojan password" };
+  const params = parsed.url.searchParams;
+  const tls = commonTlsConfig(parsed, "tls");
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "trojan",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      password: secret,
+      network: (queryValue(params, "type", "network") || "tcp").toLowerCase(),
+      path: queryValue(params, "path"),
+      host: queryValue(params, "host"),
+      serviceName: queryValue(params, "serviceName", "service_name"),
+      ...tls
+    }
+  };
+}
+
+function parseShadowsocksUri(uri) {
+  if (typeof uri !== "string" || !/^ss:\/\//i.test(uri.trim())) {
+    return { ok: false, error: "not ss://" };
+  }
+  let body = uri.trim().slice(5);
+  let name = "";
+  const hashIdx = body.indexOf("#");
+  if (hashIdx >= 0) {
+    name = safeDecodeURIComponent(body.slice(hashIdx + 1));
+    body = body.slice(0, hashIdx);
+  }
+  let query = "";
+  const qIdx = body.indexOf("?");
+  if (qIdx >= 0) {
+    query = body.slice(qIdx + 1);
+    body = body.slice(0, qIdx);
+  }
+  const params = new URLSearchParams(query);
+
+  let credentials = "";
+  let hostPort = "";
+  const atIdx = body.lastIndexOf("@");
+  if (atIdx >= 0) {
+    credentials = body.slice(0, atIdx);
+    hostPort = body.slice(atIdx + 1);
+    if (!credentials.includes(":")) {
+      try { credentials = decodeBase64UrlText(credentials); }
+      catch { return { ok: false, error: "invalid shadowsocks credentials" }; }
+    } else {
+      credentials = safeDecodeURIComponent(credentials);
+    }
+  } else {
+    let decoded;
+    try { decoded = decodeBase64UrlText(body); }
+    catch { return { ok: false, error: "invalid shadowsocks base64" }; }
+    const innerAt = decoded.lastIndexOf("@");
+    if (innerAt < 0) return { ok: false, error: "missing shadowsocks server" };
+    credentials = decoded.slice(0, innerAt);
+    hostPort = decoded.slice(innerAt + 1);
+  }
+
+  const colonCred = credentials.indexOf(":");
+  if (colonCred <= 0) return { ok: false, error: "missing shadowsocks method/password" };
+  const method = credentials.slice(0, colonCred);
+  const password = credentials.slice(colonCred + 1);
+  const colonHost = hostPort.lastIndexOf(":");
+  if (colonHost < 0) return { ok: false, error: "missing shadowsocks port" };
+  const host = hostPort.slice(0, colonHost).replace(/^\[|\]$/g, "");
+  const port = Number.parseInt(hostPort.slice(colonHost + 1), 10);
+  if (!host || !Number.isFinite(port) || port < 1 || port > 65535 || !method || !password) {
+    return { ok: false, error: "invalid shadowsocks URI" };
+  }
+
+  const pluginRaw = queryValue(params, "plugin");
+  const pluginParts = pluginRaw ? pluginRaw.split(";") : [];
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "shadowsocks",
+      name: name || `${host}:${port}`,
+      address: host,
+      port,
+      method,
+      password,
+      plugin: pluginParts.shift() || "",
+      pluginOpts: pluginParts.join(";"),
+      security: "none",
+      network: "tcp"
+    }
+  };
+}
+
+function parseTuicUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["tuic"]);
+  if (!parsed.ok) return parsed;
+  if (!parsed.username || !parsed.password) return { ok: false, error: "TUIC requires uuid and password" };
+  const params = parsed.url.searchParams;
+  const tls = commonTlsConfig(parsed, "tls");
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "tuic",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      uuid: parsed.username,
+      password: parsed.password,
+      network: "udp",
+      congestionControl: queryValue(params, "congestion_control", "congestion-control") || "cubic",
+      udpRelayMode: queryValue(params, "udp_relay_mode", "udp-relay-mode") || "native",
+      zeroRtt: queryBool(params, "zero_rtt_handshake", "zero-rtt-handshake", "zero_rtt"),
+      heartbeat: queryValue(params, "heartbeat"),
+      ...tls
+    }
+  };
+}
+
+function parseAnyTlsUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["anytls"]);
+  if (!parsed.ok) return parsed;
+  const secret = shareSecret(parsed);
+  if (!secret) return { ok: false, error: "missing AnyTLS password" };
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "anytls",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      password: secret,
+      network: "tcp",
+      ...commonTlsConfig(parsed, "tls")
+    }
+  };
+}
+
+function parseSocksUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["socks", "socks5", "socks4", "socks4a"]);
+  if (!parsed.ok) return parsed;
+  const version = parsed.scheme === "socks4" ? "4" : parsed.scheme === "socks4a" ? "4a" : "5";
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "socks",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      username: parsed.username,
+      password: parsed.password,
+      socksVersion: version,
+      network: "tcp",
+      security: "none"
+    }
+  };
+}
+
+function parseHttpProxyUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["http", "https"]);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "http",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      username: parsed.username,
+      password: parsed.password,
+      path: parsed.url.pathname && parsed.url.pathname !== "/" ? safeDecodeURIComponent(parsed.url.pathname) : "",
+      network: "tcp",
+      ...commonTlsConfig(parsed, parsed.scheme === "https" ? "tls" : "none")
+    }
+  };
+}
+
+function parseSshUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["ssh"]);
+  if (!parsed.ok) return parsed;
+  if (!parsed.password) return { ok: false, error: "SSH URI requires a password (private keys can be configured in state.json)" };
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "ssh",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      username: parsed.username || "root",
+      password: parsed.password,
+      network: "tcp",
+      security: "none"
+    }
+  };
+}
+
+function parseNaiveUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["naive+https", "naive+quic"]);
+  if (!parsed.ok) return parsed;
+  if (!parsed.password) return { ok: false, error: "Naive URI requires username/password" };
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "naive",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      username: parsed.username,
+      password: parsed.password,
+      quic: parsed.scheme === "naive+quic",
+      network: "tcp",
+      ...commonTlsConfig(parsed, "tls")
+    }
+  };
+}
+
+function parseHysteriaUri(uri) {
+  const parsed = parseGenericShareUrl(uri, ["hysteria"]);
+  if (!parsed.ok) return parsed;
+  const params = parsed.url.searchParams;
+  const password = queryValue(params, "auth", "auth_str") || shareSecret(parsed);
+  const upMbps = parseBandwidthMbps(queryValue(params, "upmbps", "up_mbps", "up"));
+  const downMbps = parseBandwidthMbps(queryValue(params, "downmbps", "down_mbps", "down"));
+  if (!password) return { ok: false, error: "missing Hysteria auth" };
+  if (!upMbps || !downMbps) return { ok: false, error: "Hysteria v1 requires upmbps and downmbps" };
+  const tls = commonTlsConfig(parsed, "tls");
+  return {
+    ok: true,
+    config: {
+      ...createDefaultProxyConfig(),
+      protocol: "hysteria",
+      name: parsed.name || `${parsed.host}:${parsed.port}`,
+      address: parsed.host,
+      port: parsed.port,
+      password,
+      upMbps,
+      downMbps,
+      obfsPassword: queryValue(params, "obfs"),
+      network: "udp",
+      ...tls
+    }
+  };
+}
+
+function parseProxyUri(uri) {
+  const raw = String(uri || "").trim();
+  if (!raw) return { ok: false, error: "empty URI" };
+  // Hiddify can export/share a sing-box JSON profile instead of individual
+  // URIs. Accept a single JSON outbound (or the first standalone outbound
+  // from a full config) here as well so the manual import box is useful for
+  // both forms.
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    const jsonResult = parseSingboxJsonSubscription(raw);
+    if (jsonResult) {
+      if (jsonResult.configs.length) return { ok: true, config: jsonResult.configs[0] };
+      return { ok: false, error: jsonResult.errors[0]?.error || "sing-box JSON has no standalone server outbound/endpoint" };
+    }
+  }
+  if (/^vless:\/\//i.test(raw)) return parseVlessUri(raw);
+  if (/^vmess:\/\//i.test(raw)) return parseVmessUri(raw);
+  if (/^(hysteria2|hy2):\/\//i.test(raw)) return parseHysteria2Uri(raw);
+  if (/^hysteria:\/\//i.test(raw)) return parseHysteriaUri(raw);
+  if (/^trojan:\/\//i.test(raw)) return parseTrojanUri(raw);
+  if (/^ss:\/\//i.test(raw)) return parseShadowsocksUri(raw);
+  if (/^tuic:\/\//i.test(raw)) return parseTuicUri(raw);
+  if (/^anytls:\/\//i.test(raw)) return parseAnyTlsUri(raw);
+  if (/^(socks|socks5|socks4|socks4a):\/\//i.test(raw)) return parseSocksUri(raw);
+  if (/^https?:\/\//i.test(raw)) return parseHttpProxyUri(raw);
+  if (/^ssh:\/\//i.test(raw)) return parseSshUri(raw);
+  if (/^naive\+(https|quic):\/\//i.test(raw)) return parseNaiveUri(raw);
+  return { ok: false, error: "unsupported proxy URI scheme" };
+}
+
+function singboxEndpointToProxyConfig(endpoint) {
+  if (!endpoint || typeof endpoint !== "object" || Array.isArray(endpoint)) return null;
+  const protocol = String(endpoint.type || "").trim().toLowerCase();
+  if (!protocol) return null;
+
+  // Endpoint protocols (WireGuard, Tailscale, OpenConnect/OpenVPN in newer
+  // sing-box) are both inbound/outbound capable. AntiGoblin can safely lift
+  // a self-contained endpoint when it exposes a concrete first peer.
+  const peer = Array.isArray(endpoint.peers) ? endpoint.peers[0] : null;
+  const address = String(peer?.address || "").trim();
+  const portNumber = Number(peer?.port);
+  const port = Number.isFinite(portNumber) && portNumber >= 1 && portNumber <= 65535
+    ? Math.trunc(portNumber)
+    : 0;
+  if (!address || !port) return null;
+
+  return {
+    ...createDefaultProxyConfig(),
+    protocol,
+    engine: "singbox",
+    singboxEndpoint: JSON.parse(JSON.stringify(endpoint)),
+    name: String(endpoint.tag || `${protocol} ${address}:${port}`),
+    address,
+    port,
+    network: "udp",
+    security: "none",
+    privateKey: String(endpoint.private_key || "")
+  };
+}
+
+function singboxOutboundToProxyConfig(outbound) {
+  if (!outbound || typeof outbound !== "object" || Array.isArray(outbound)) return null;
+  const protocol = String(outbound.type || "").trim().toLowerCase();
+  if (!protocol || ["direct", "block", "dns", "selector", "urltest"].includes(protocol)) return null;
+
+  const address = String(outbound.server || "").trim();
+  const portNumber = Number(outbound.server_port);
+  const port = Number.isFinite(portNumber) && portNumber >= 1 && portNumber <= 65535
+    ? Math.trunc(portNumber)
+    : 0;
+  // AntiGoblin activates one upstream at a time. Composite/selector/endpoint
+  // graphs need their referenced nodes too, so only import self-contained
+  // server outbounds here. We keep every provider-specific field inside the
+  // raw object once it passes this basic standalone check.
+  if (!address || !port) return null;
+
+  const tls = outbound.tls && typeof outbound.tls === "object" ? outbound.tls : null;
+  const reality = tls?.reality && typeof tls.reality === "object" ? tls.reality : null;
+  const transport = outbound.transport && typeof outbound.transport === "object" ? outbound.transport : null;
+  const rawCopy = JSON.parse(JSON.stringify(outbound));
+  const security = tls
+    ? (reality?.enabled ? "reality" : (tls.enabled === false ? "none" : "tls"))
+    : "none";
+
+  return {
+    ...createDefaultProxyConfig(),
+    protocol,
+    engine: "singbox",
+    singboxOutbound: rawCopy,
+    name: String(outbound.tag || `${protocol} ${address}:${port}`),
+    address,
+    port,
+    uuid: String(outbound.uuid || ""),
+    flow: String(outbound.flow || ""),
+    password: String(outbound.password || outbound.auth_str || ""),
+    username: String(outbound.username || outbound.user || ""),
+    method: String(outbound.method || ""),
+    network: String(transport?.type || (protocol.startsWith("hysteria") || protocol === "tuic" ? "udp" : "tcp")),
+    security,
+    serverName: String(tls?.server_name || ""),
+    fingerprint: String(tls?.utls?.fingerprint || ""),
+    publicKey: String(reality?.public_key || ""),
+    shortId: String(reality?.short_id || ""),
+    alpn: Array.isArray(tls?.alpn) ? tls.alpn.map(String) : [],
+    path: String(transport?.path || ""),
+    host: Array.isArray(transport?.host) ? String(transport.host[0] || "") : String(transport?.host || ""),
+    serviceName: String(transport?.service_name || ""),
+    insecure: !!tls?.insecure,
+    congestionControl: String(outbound.congestion_control || "cubic"),
+    udpRelayMode: String(outbound.udp_relay_mode || "native"),
+    zeroRtt: !!outbound.zero_rtt_handshake,
+    heartbeat: String(outbound.heartbeat || ""),
+    upMbps: Number(outbound.up_mbps) || 0,
+    downMbps: Number(outbound.down_mbps) || 0,
+    quic: !!outbound.quic,
+    privateKey: String(outbound.private_key || ""),
+    privateKeyPath: String(outbound.private_key_path || ""),
+    privateKeyPassphrase: String(outbound.private_key_passphrase || "")
+  };
+}
+
+// Returns null when the body isn't JSON. When it is JSON, returns the same
+// {configs, errors} shape as the line-oriented subscription parser. Keeping
+// the original outbound makes this forward-compatible with Hiddify-specific
+// sing-box extensions (for example XHTTP) that have no stable share URI.
+function parseSingboxJsonSubscription(rawText) {
+  // Some subscription endpoints prepend UTF-8 BOM. Strip it before deciding
+  // whether the payload is JSON, otherwise a valid Hiddify export falls back
+  // to the line parser and appears empty.
+  const text = String(rawText || "").replace(/^\uFEFF/, "").trim();
+  if (!text || (!text.startsWith("{") && !text.startsWith("["))) return null;
+
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  let outbounds = [];
+  let endpoints = [];
+  if (Array.isArray(doc)) outbounds = doc;
+  else if (doc && typeof doc === "object") {
+    if (Array.isArray(doc.outbounds)) outbounds = doc.outbounds;
+    if (Array.isArray(doc.endpoints)) endpoints = doc.endpoints;
+    // A pasted standalone object can be either an outbound (server/server_port)
+    // or an endpoint (peers[] in sing-box >= 1.11).
+    if (!outbounds.length && !endpoints.length && doc.type) {
+      if (Array.isArray(doc.peers)) endpoints = [doc];
+      else outbounds = [doc];
+    }
+  } else {
+    return { configs: [], errors: [{ line: "sing-box JSON", error: "JSON has no outbounds[] or endpoints[]" }] };
+  }
+
+  if (!outbounds.length && !endpoints.length) {
+    return { configs: [], errors: [{ line: "sing-box JSON", error: "JSON has no outbounds[] or endpoints[]" }] };
+  }
+
+  const configs = [];
+  const errors = [];
+  const directTags = new Set(
+    outbounds
+      .filter((item) => item && typeof item === "object" && String(item.type || "").toLowerCase() === "direct")
+      .map((item) => String(item.tag || "direct"))
+  );
+  directTags.add("direct");
+
+  const normalizeDetour = (node, kind) => {
+    if (!node?.detour) return node;
+    if (directTags.has(String(node.detour))) {
+      const copy = JSON.parse(JSON.stringify(node));
+      copy.detour = "direct";
+      return copy;
+    }
+    errors.push({
+      line: String(node.tag || node.type || kind).slice(0, 80),
+      error: `linked ${kind} depends on detour '${String(node.detour).slice(0, 80)}'`
+    });
+    return null;
+  };
+
+  for (const originalOutbound of outbounds) {
+    if (!originalOutbound || typeof originalOutbound !== "object") continue;
+    const type = String(originalOutbound.type || "").toLowerCase();
+    if (["direct", "block", "dns", "selector", "urltest"].includes(type)) continue;
+    const outbound = normalizeDetour(originalOutbound, "outbound");
+    if (!outbound) continue;
+    const config = singboxOutboundToProxyConfig(outbound);
+    if (config) configs.push(config);
+    else if (type) {
+      errors.push({
+        line: String(outbound.tag || type).slice(0, 80),
+        error: "outbound has no standalone server/server_port"
+      });
+    }
+  }
+
+  for (const originalEndpoint of endpoints) {
+    if (!originalEndpoint || typeof originalEndpoint !== "object") continue;
+    const type = String(originalEndpoint.type || "").toLowerCase();
+    if (!type) continue;
+    const endpoint = normalizeDetour(originalEndpoint, "endpoint");
+    if (!endpoint) continue;
+    const config = singboxEndpointToProxyConfig(endpoint);
+    if (config) configs.push(config);
+    else {
+      errors.push({
+        line: String(endpoint.tag || type).slice(0, 80),
+        error: "endpoint has no standalone peers[0].address/port"
+      });
+    }
+  }
+
+  return { configs, errors };
+}
+
+// Parse a subscription body (already base64-decoded by caller). Hiddify /
+// sing-box JSON is accepted directly; otherwise each non-empty line is a
+// share URI and unknown schemes are skipped silently.
 function parseSubscriptionText(rawText) {
+  const jsonResult = parseSingboxJsonSubscription(rawText);
+  if (jsonResult) return jsonResult;
+
   const lines = String(rawText || "").split(/\r?\n/);
   const configs = [];
   const errors = [];
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("#")) continue;
-    let result = null;
-    if (/^vless:\/\//i.test(trimmed)) result = parseVlessUri(trimmed);
-    else if (/^vmess:\/\//i.test(trimmed)) result = parseVmessUri(trimmed);
-    else if (/^(hysteria2|hy2):\/\//i.test(trimmed)) result = parseHysteria2Uri(trimmed);
-    else continue;
+    const result = parseProxyUri(trimmed);
+    if (!result.ok && result.error === "unsupported proxy URI scheme") continue;
     if (result.ok) configs.push(result.config);
     else errors.push({ line: trimmed.slice(0, 80), error: result.error });
   }
@@ -3654,9 +4661,7 @@ function normalizeProxyEntry(entry) {
   if (!entry || typeof entry !== "object") return null;
   const config = normalizeProxyConfig(entry.config);
   config.port = sanitizeProxyPort(config.port);
-  // vless/vmess authenticate by uuid; hysteria2 by password. Accept either.
-  const hasAuth = config.uuid || config.password;
-  if (!config.address || !hasAuth || !config.port) return null;
+  if (!config.address || !proxyConfigHasRequiredAuth(config) || !config.port) return null;
   return {
     id: sanitizeId(entry.id, "proxy"),
     name: String(entry.name || config.address || "Unnamed"),
@@ -3702,7 +4707,7 @@ function normalizeProfile(profile) {
   // Migration: if proxies[] is empty but legacy proxyConfig has real fields,
   // create proxies[0] from legacy. Idempotent — running again no-ops since
   // the migrated proxy is already present.
-  if (proxies.length === 0 && legacy.address && legacy.uuid) {
+  if (proxies.length === 0 && legacy.address && proxyConfigHasRequiredAuth(legacy)) {
     proxies.push({
       id: `proxy-${newId()}`,
       name: legacy.address || "Legacy",
@@ -3970,13 +4975,39 @@ function applyTranslations() {
   if (els.langLabel) els.langLabel.textContent = T.langLabel;
   if (els.heroTitle) els.heroTitle.textContent = T.heroTitle;
   if (els.heroLead) els.heroLead.textContent = T.heroLead;
+  if (els.setupGuideKicker) els.setupGuideKicker.textContent = T.setupGuideKicker;
+  if (els.setupGuideTitle) els.setupGuideTitle.textContent = T.setupGuideTitle;
+  if (els.setupGuideLead) els.setupGuideLead.textContent = T.setupGuideLead;
+  const setupCopy = [
+    [els.setupStepAccess, T.setupStepAccessTitle, T.setupStepAccessDesc],
+    [els.setupStepActive, T.setupStepActiveTitle, T.setupStepActiveDesc],
+    [els.setupStepRules, T.setupStepRulesTitle, T.setupStepRulesDesc]
+  ];
+  for (const [node, title, desc] of setupCopy) {
+    if (!node) continue;
+    const strong = node.querySelector("strong");
+    const small = node.querySelector("small");
+    if (strong) strong.textContent = title;
+    if (small) small.textContent = desc;
+  }
   if (els.profileKicker) els.profileKicker.textContent = T.profileKicker;
   if (els.profileTitle) els.profileTitle.textContent = T.profileTitle;
   if (els.activeProfileLabel) els.activeProfileLabel.textContent = T.activeProfileLabel;
   if (els.profileNameLabel) els.profileNameLabel.textContent = T.profileNameLabel;
   if (els.domainStrategyLabel) els.domainStrategyLabel.textContent = T.domainStrategyLabel;
   if (els.fallbackLabel) els.fallbackLabel.textContent = T.fallbackLabel;
-  if (els.proxyTitle) els.proxyTitle.textContent = T.proxyPanelTitle || T.proxyTitle;
+  if (els.profileAdvancedSummary) els.profileAdvancedSummary.textContent = T.profileAdvancedSummary;
+  if (els.profileAdvancedHint) els.profileAdvancedHint.textContent = T.profileAdvancedHint;
+  if (els.proxyTitle) els.proxyTitle.textContent = T.proxyTitle;
+  if (els.proxyHelp) els.proxyHelp.textContent = T.proxyHelp;
+  if (els.activeKeyHelp) els.activeKeyHelp.textContent = T.activeKeyHelp;
+  if (els.activeProxyFilter) els.activeProxyFilter.placeholder = T.activeProxyFilterPlaceholder;
+  if (els.subsHelp) els.subsHelp.textContent = T.subsHelp;
+  if (els.manualKeysHelp) els.manualKeysHelp.textContent = T.manualKeysHelp;
+  if (els.manualKeyFormHelp) els.manualKeyFormHelp.textContent = T.manualKeyFormHelp;
+  if (els.subscriptionFormHelp) els.subscriptionFormHelp.textContent = T.subscriptionFormHelp;
+  if (els.proxyAdvancedSummary) els.proxyAdvancedSummary.textContent = T.proxyAdvancedSummary;
+  if (els.proxyAdvancedHint) els.proxyAdvancedHint.textContent = T.proxyAdvancedHint;
   if (els.subsHeading) els.subsHeading.textContent = T.subsHeading;
   if (els.manualKeysHeading) els.manualKeysHeading.textContent = T.manualKeysHeading;
   if (els.activeKeyHeading) els.activeKeyHeading.textContent = T.activeKeyHeading;
@@ -3986,7 +5017,7 @@ function applyTranslations() {
   if (els.keyNameLabelSpan) els.keyNameLabelSpan.textContent = T.keyNameLabel;
   if (els.manualKeyName) els.manualKeyName.placeholder = T.keyNamePlaceholder || "My VPN";
   if (els.advancedFieldsSummary) els.advancedFieldsSummary.textContent = T.advancedFieldsSummary;
-  if (els.saveManualKeyBtn) els.saveManualKeyBtn.textContent = T.saveBtn;
+  if (els.saveManualKeyBtn) els.saveManualKeyBtn.textContent = T.saveManualFieldsBtn || T.saveBtn;
   if (els.cancelManualKeyBtn) els.cancelManualKeyBtn.textContent = T.cancelBtn;
   if (els.newSubTitle) els.newSubTitle.textContent = T.newSubTitle;
   if (els.subNameLabelSpan) els.subNameLabelSpan.textContent = T.subNameLabel;
@@ -4016,6 +5047,16 @@ function applyTranslations() {
   if (els.previewTitle) els.previewTitle.textContent = T.previewTitle;
   if (els.groupsKicker) els.groupsKicker.textContent = T.groupsKicker;
   if (els.groupsTitle) els.groupsTitle.textContent = T.groupsTitle;
+  if (els.groupsHelp) els.groupsHelp.textContent = T.groupsHelp;
+  if (els.actionDockTitle) els.actionDockTitle.textContent = T.actionDockTitle;
+  if (els.actionDockHint) els.actionDockHint.textContent = T.actionDockHint;
+  if (els.quickApplyBtn) els.quickApplyBtn.textContent = T.saveApplyBtn;
+  if (els.fallbackOutbound) {
+    const labels = currentLang === "ru"
+      ? { direct: "Напрямую", "vless-reality": "Через активный VPN" }
+      : { direct: "Direct", "vless-reality": "Through active VPN" };
+    for (const option of els.fallbackOutbound.options) option.textContent = labels[option.value] || option.value;
+  }
 
   if (els.importStateBtn) els.importStateBtn.textContent = T.importBtn;
   if (els.exportStateBtn) els.exportStateBtn.textContent = T.exportBtn;

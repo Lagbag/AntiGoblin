@@ -1,15 +1,36 @@
 # AntiGoblin
 
-<p align="center">
-  <img src="docs/screenshots/ui-overview.png" alt="AntiGoblin UI" width="900">
-</p>
-
 `AntiGoblin` — это панель управления для `Keenetic + Entware + XKeen/xray + sing-box`, которая живёт на самом роутере.
+
+> [!IMPORTANT]
+> **Если AntiGoblin уже установлен — удалять старую версию перед обновлением не нужно.**
+> Запусти `update.sh`: он сделает backup пользовательского state и VPN-конфигов, обновит UI/backend/runtime и перезапустит сервисы. Чистое удаление нужно только если ты действительно хочешь отказаться от AntiGoblin.
+
+### Самые нужные команды
+
+После того как Entware уже работает и ты перешёл из Keenetic CLI в shell через `exec sh`:
+
+```sh
+# Первая установка
+opkg install curl
+/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/install.sh | /opt/bin/sh
+
+# Обновление уже установленной версии — state/ключи/правила сохраняются
+/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/update.sh | /opt/bin/sh
+
+# Обычное удаление — перед удалением создаётся backup, VPN-конфиги сохраняются
+/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/uninstall.sh | /opt/bin/sh
+```
+
+UI после установки: `http://<IP-роутера>:8899/`. Логин и пароль — те же, что у web-интерфейса Keenetic.
+
+> [!NOTE]
+> Команды выше скачивают файлы из `Lagbag/AntiGoblin:main`. Они начнут ставить **именно эту обновлённую сборку после того, как ты зальёшь её в свой fork**. Если используешь ZIP, скачанный из этого чата, ничего пушить не обязательно: распакуй его, скопируй папку на Entware-накопитель роутера и запусти локальную установку/обновление из раздела ниже.
 
 После установки рабочий сценарий пользователя:
 
 1. Открыть UI на `http://<router-ip>:8899/`.
-2. Добавить **ключ** — вручную через `vless://` / `vmess://` / `hysteria2://` URI, или подключить **подписку** по HTTPS-URL.
+2. Добавить **ключ** — вручную через поддерживаемый proxy URI (`vless://`, `vmess://`, `hysteria2://`, `trojan://`, `ss://`, `tuic://` и др.), вставить standalone sing-box/Hiddify JSON или подключить **подписку** по HTTPS-URL.
 3. Выбрать активный ключ (radio-кнопка в блоке «Активный ключ»).
 4. Создать routing-группы.
 5. Нажать `Сохранить и применить`.
@@ -19,8 +40,8 @@
 
 - политику Keenetic `xkeen` для выбора устройств;
 - `iptables` для перехвата `TCP` и `UDP` устройств из `xkeen`;
-- `xray` для маршрутизации `TCP` через активный ключ или `direct`;
-- `sing-box` для маршрутизации `UDP`: либо через xray SS-relay (для xray-протоколов), либо напрямую через свой outbound (для `hysteria2`).
+- `xray` для transparent TCP на `:61219`: VLESS/VMess он терминирует сам, остальные активные протоколы передаёт в локальный SOCKS5-мост sing-box `127.0.0.1:61225`;
+- `sing-box` для UDP TPROXY на `:61221` и для upstream-протоколов, которые не терминируются xray напрямую.
 
 Текущая живая модель runtime:
 
@@ -37,19 +58,31 @@
 
 | Протокол | Транспорты | Безопасность | Тоннелирует через |
 |----------|-----------|--------------|-------------------|
-| **VLESS** | `tcp`, `ws`, `grpc`, `xhttp` | `reality`, `tls`, `none` | xray |
-| **VMess** | `tcp`, `ws`, `grpc` | `tls`, `reality`, `none` | xray |
-| **Hysteria2** (`hy2://` тоже) | `quic` (UDP) | `tls`, obfs (Salamander), pinSHA256 | sing-box, xray ходит SOCKS5'ом в sing-box на `127.0.0.1:61225` |
+| **VLESS** | `tcp`, `ws`, `grpc`, `xhttp` | `reality`, `tls`, `none` | xray для URI; raw sing-box JSON остаётся на sing-box |
+| **VMess** | `tcp`, `ws`, `grpc` | `tls`, `reality`, `none` | xray для URI; raw sing-box JSON остаётся на sing-box |
+| **Hysteria2 / HY2** | `quic` | `tls`, Salamander obfs, cert pin | sing-box |
+| **Hysteria v1** | `quic` | `tls`, obfs, up/down Mbps | sing-box |
+| **Trojan** | `tcp`, `ws`, `grpc`, `httpupgrade`, `http/h2` | `tls` | sing-box |
+| **Shadowsocks** | TCP/UDP | SIP002 / legacy `ss://`, plugin/options | sing-box |
+| **TUIC** | `quic` | `tls`, congestion control, UDP relay, 0-RTT | sing-box |
+| **AnyTLS** | TCP | `tls` | sing-box |
+| **SOCKS4/4a/5** | TCP/UDP по возможностям upstream | optional auth | sing-box |
+| **HTTP / HTTPS CONNECT** | TCP | optional auth, TLS для HTTPS | sing-box |
+| **SSH** | TCP | password; private-key поля сохраняются в state | sing-box |
+| **Naive** | HTTPS / QUIC | `tls` | Hiddify sing-box |
+| **WireGuard** | L3 endpoint | raw Hiddify/sing-box `endpoints[]` | sing-box endpoint (1.13+) |
 
 Особенности:
 
 - **XHTTP** разбирает все `mode`-варианты (`auto`/`packet-up`/`stream-up`/`stream-one`) и весь `extra={...}` блок (`scMaxEachPostBytes`, `scMaxConcurrentPosts`, `scMinPostsIntervalMs`, `xPaddingBytes`, `noGRPCHeader` и т. п.). Это критично — без правильно прокинутого `extra` стрим-up handshake не складывается и сервер скатывается в Reality fallback HTML.
 - **gRPC** покрывает `serviceName`, `mode` (`multi`/`gun`), `authority` и `alpn`.
-- **Hysteria2** работает через bridge-схему: xray-outbound `vless-reality` подменяется на SOCKS5 в локальный mixed-inbound sing-box (`127.0.0.1:61225`), а sing-box уже держит реальный hysteria2 outbound. UDP-TPROXY на 61221 в sing-box тоже терминируется в hysteria2 напрямую.
+- **Все sing-box-backed протоколы** работают через одну bridge-схему: xray-outbound с историческим тегом `vless-reality` становится SOCKS5-hop в локальный mixed-inbound sing-box (`127.0.0.1:61225`), а sing-box держит реальный upstream. UDP-TPROXY на `61221` уходит в тот же активный outbound напрямую.
+- **Hiddify/sing-box JSON**: подписка или ручной импорт может содержать полный `outbounds[]`, `endpoints[]`, один standalone outbound или endpoint. Сам узел сохраняется почти без преобразования, поэтому provider-specific поля (например XHTTP extensions и расширенные WireGuard options) не теряются. Selector/urltest/direct и цепочки с `detour` не импортируются как один ключ — им нужны зависимые узлы.
+- Installer на `arm64/aarch64` и `amd64/x86_64` сначала ставит `hiddify-sing-box`; если подходящего Hiddify asset нет, откатывается на официальный sing-box. Это даёт расширения Hiddify там, где бинарь их реально поддерживает.
 
 ### Подписки
 
-Подписка — это HTTPS-URL, который отдаёт base64-кодированный список URI (по одному ключу на строку). Поддерживается стандартный формат `subconverter`/`v2sub`. AntiGoblin:
+Подписка — это HTTPS-URL, который отдаёт base64-кодированный или plain-text список URI (по одному ключу на строку), либо sing-box/Hiddify JSON с `outbounds[]`/`endpoints[]`. Для URI поддерживается стандартный формат `subconverter`/`v2sub`. AntiGoblin:
 
 - по HTTPS-only, с лимитом ответа 256KB и таймаутом 10 секунд;
 - хранит URL подписки в `xkeen-ui-state.json` (root-only на роутере);
@@ -90,7 +123,7 @@ LAN-IP роутера подставляется в inbound-конфиг **ди�
 - [Структура проекта](#структура-проекта)
 - [Источник истины](#источник-истины)
 - [Runtime-файлы на роутере](#runtime-файлы-на-роутере)
-- [Обновление](#обновление)
+- [Обновление без удаления](#обновление-без-удаления)
 - [Удаление](#удаление)
 - [Разработка](#разработка)
 - [Инварианты проекта](#инварианты-проекта)
@@ -196,7 +229,9 @@ exec sh                    # выйти из NDM CLI в обычный shell
 
 ## Установка
 
-Три варианта, от самого простого к самому «hands-on». Все три ведут к одному результату — рабочему UI на роутере. Флеш-путь рекомендуется всем, кто не хочет открывать терминал.
+Если это **обновление существующей установки**, сразу переходи в раздел [Обновление без удаления](#обновление-без-удаления). Повторная установка поверх старой версии тоже безопасна, но `update.sh` понятнее и явно проверяет, что старая установка существует.
+
+Три варианта для **первой установки**, от самого простого к самому «hands-on». Все три ведут к одному результату — рабочему UI на роутере. Флеш-путь рекомендуется тем, кто не хочет открывать терминал.
 
 ### Вариант 1 — «всё-на-флешке» (рекомендуемый, без SSH и без web CLI)
 
@@ -206,7 +241,7 @@ exec sh                    # выйти из NDM CLI в обычный shell
 
 **Шаги:**
 
-1. Скачать `antigoblin-usb-<arch>.zip` из [GitHub Releases](https://github.com/MaksimSamarin/AntiGoblin/releases):
+1. Скачать `antigoblin-usb-<arch>.zip` из [GitHub Releases](https://github.com/Lagbag/AntiGoblin/releases):
 
    - `antigoblin-usb-aarch64.zip` — большинство современных Keenetic: Giga, Ultra, Hero, Peak, Speedster, Runner, Hopper, Skipper.
    - `antigoblin-usb-armv7.zip` — старые: Extra, Giga II/III, Duo, Air, Omni.
@@ -271,7 +306,7 @@ http://<адрес-роутера>/a
 Ввести команду:
 
 ```sh
-exec sh -c "opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
+exec sh -c "opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
 ```
 
 Что происходит:
@@ -288,7 +323,8 @@ exec sh -c "opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.g
 ```sh
 ssh admin@<адрес-роутера>
 exec sh
-curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/install.sh | sh
+opkg install curl
+/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/install.sh | /opt/bin/sh
 ```
 
 Подставь адрес роутера ([как узнать](#как-открыть-ui-после-установки)) вместо `<адрес-роутера>` — например `my.keenetic.net` или `192.168.1.1`.
@@ -303,15 +339,15 @@ curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/insta
 ssh admin@<адрес-роутера>
 exec sh
 opkg install curl
-curl -fsSL -o install.sh https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/install.sh
-sh install.sh
+/opt/bin/curl -fsSL -o /opt/tmp/antigoblin-install.sh https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/install.sh
+/opt/bin/sh /opt/tmp/antigoblin-install.sh
 ```
 
 Скрипт (общий для всех трёх вариантов):
 
 - проверяет `Entware/OPKG` в `/opt`;
 - ставит пакеты Entware (`xray`, `uhttpd_kn`, `jq`, `iptables`, `ipset`, `conntrack`, `ca-bundle`, `wget`, `tar`, `gzip` и др.);
-- скачивает `sing-box` musl-бинарь под архитектуру роутера и кладет в `/opt/sbin/sing-box`;
+- на `arm64/aarch64` и `amd64/x86_64` сначала скачивает `hiddify-sing-box` (для Hiddify-расширений), а при недоступности/неподдерживаемой архитектуре использует официальный `sing-box`; бинарь кладётся в `/opt/sbin/sing-box`;
 - скачивает свежий tarball репозитория с GitHub и распаковывает во временный каталог;
 - создает UI-видимую политику Keenetic `xkeen` как `Policy42+`, если ее еще нет;
 - раскладывает sample-конфиги `xray` и `sing-box` (существующие конфиги не трогаются — для перезаписи использовать `ANTIGOBLIN_FORCE=1`);
@@ -320,11 +356,18 @@ sh install.sh
 - ставит cron и `ndm/usb.d`/`ndm/netfilter.d` хуки для авто-восстановления после reboot, USB-событий и reload netfilter;
 - запускает первый цикл `xkeen-selfheal.sh --force` и поднимает UI на `:8899`.
 
-Скрипт идемпотентный: повторный запуск обновит исходники без затирания пользовательской конфигурации. Чтобы пересеять и sample-конфиги:
+Скрипт идемпотентный: повторный запуск обновит исходники без затирания пользовательской конфигурации. При обнаружении старой установки он перед заменой файлов создаёт backup в `/opt/var/backups/antigoblin/pre-upgrade-<дата>/`.
+
+Доступные режимы локального `install.sh`:
 
 ```sh
-ANTIGOBLIN_FORCE=1 sh install.sh
+sh install.sh            # auto: первая установка или upgrade-in-place
+sh install.sh --update   # обновить; ошибка, если старой установки нет
+sh install.sh --install  # установка; безопасно и поверх старой версии
+sh install.sh --force    # плюс пересев безопасных sample-конфигов
 ```
+
+`--force` **не нужен для обычного обновления**. Пользовательские `04_outbounds.json`, `05_routing.json` и state сохраняются.
 
 ### Как открыть UI после установки
 
@@ -352,7 +395,7 @@ ANTIGOBLIN_FORCE=1 sh install.sh
 В UI:
 
 1. **Добавить ключ или подписку** в блоке «Конфиг прокси»:
-   - **+ Ручной ключ** — вставить `vless://`, `vmess://` или `hysteria2://` URI. Парсер сам разложит на поля.
+   - **+ Ручной ключ** — вставить поддерживаемый URI (`vless://`, `vmess://`, `hysteria2://`, `hysteria://`, `trojan://`, `ss://`, `tuic://`, `anytls://`, `socks5://`, `http(s)://`, `ssh://`, `naive+https://` / `naive+quic://`) или standalone sing-box/Hiddify JSON. Парсер сам разложит URI на поля; raw JSON сохранит upstream outbound/endpoint (включая современный WireGuard `endpoints[]`).
    - **+ Подписка** — добавить HTTPS-URL подписки. Backend стянет, распарсит, добавит каждый ключ как отдельную карточку.
 2. **Выбрать активный ключ** — radio-кнопка в «Активный ключ». Через него пойдёт весь VPN-трафик.
 3. **Создать или включить routing-группы.** У каждой группы выбрать outbound:
@@ -393,9 +436,9 @@ ANTIGOBLIN_FORCE=1 sh install.sh
 
 Из него UI/backend генерируют (и каждый Save+Apply перезаписывает):
 
-- `/opt/etc/xray/configs/04_outbounds.json` — outbound активного ключа. Для `hysteria2` это SOCKS5 в локальный sing-box.
+- `/opt/etc/xray/configs/04_outbounds.json` — outbound активного ключа. Для sing-box-backed протоколов это SOCKS5 в локальный sing-box.
 - `/opt/etc/xray/configs/05_routing.json` — правила маршрутизации UI-групп.
-- `/opt/etc/sing-box/xkeen.json` — для xray-протоколов это TPROXY+SS-relay; для `hysteria2` это TPROXY+mixed-inbound+hysteria2-outbound.
+- `/opt/etc/sing-box/xkeen.json` — для Xray-native VLESS/VMess это TPROXY+SS-relay; для остальных активных протоколов это TPROXY+mixed-inbound+реальный upstream outbound.
 
 Перед каждой записью бэкенд сохраняет копию с суффиксом `.bak-ui-<timestamp>` — откатить руками можно `cp`-ом.
 
@@ -410,73 +453,82 @@ UI и backend:
 
 Bypass собирается только из UI-групп с outbound `bypass`. Их домены и CIDR попадают в runtime `xkeen_bypass` и обходят `xray` через `RETURN`.
 
-UDP-маршрутизация привязана к outbound группы автоматически: для любой включенной группы с outbound `vless-reality` ее домены/CIDR попадают в `xkeen_udp_route`, и совпавший UDP уходит через `TPROXY → sing-box (61221) → xray SS-relay (127.0.0.1:62640) → xray VLESS Reality`. Группы с outbound `direct` или `bypass` UDP не трогают.
+UDP-маршрутизация привязана к outbound группы автоматически: для любой включенной группы с outbound `vless-reality` её домены/CIDR попадают в `xkeen_udp_route`, и совпавший UDP уходит в `TPROXY → sing-box:61221`. Для VLESS/VMess sing-box передаёт его в `xray SS-relay:62640`, а для sing-box-backed протокола отправляет сразу в активный upstream. Группы с outbound `direct` или `bypass` UDP не трогают.
 
 Общая сборка runtime живет в `xkeen-runtime.sh`: и apply из UI, и self-heal используют один и тот же код для `iptables`/`ipset`.
 
-## Обновление
+## Обновление без удаления
 
-Повторный прогон установщика подтянет последнюю версию из main:
+**Старую версию удалять не надо.** Рекомендуемый способ:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/install.sh | sh
+ssh admin@<адрес-роутера>
+exec sh
+/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/update.sh | /opt/bin/sh
 ```
 
-UI state и существующие `xray`/`sing-box` конфиги **не пересеваются**: новые версии backend/UI просто заменяются. При первом запуске нового UI старая схема state (`proxyConfig` одной штукой) автоматически мигрирует в новую (`proxies[]` + `subscriptions[]` + `activeProxyId`) при чтении — пользовательский ключ становится первой записью в `proxies[]` и сразу активным. Откатиться легко: бэкап state делается каждый Save+Apply (`.bak-ui-<timestamp>`).
+Через Keenetic Web CLI (`http://<адрес-роутера>/a`) одной строкой:
 
-Что ещё делает upgrade:
+```sh
+exec sh -c "opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/update.sh | /opt/bin/sh"
+```
 
-- **Essential-пакеты** (`xray`, `uhttpd_kn`, `iptables`, `ipset`, `conntrack`, `jq`, `gawk`, `ca-bundle`) теперь `fail-hard`: если `opkg` недоступен или сеть упала, установка падает с явной ошибкой (а не молча продолжает с broken-stack).
-- **SOCKS5-inbound** на порту 61080 автоматически merge-ится в `03_inbounds.json` если его там ещё нет (без `ANTIGOBLIN_FORCE=1`). Пропускается, если у пользователя уже занят порт 61080 или тег `socks-in`.
-- **`/opt/etc/antigoblin.conf`** каждый прогон перезаписывается с `PORT=$ANTIGOBLIN_UI_PORT` (по умолчанию 8899). Если раньше запускался с нестандартным портом, задай `ANTIGOBLIN_UI_PORT=...` перед новым upgrade.
-- **`ndm/fs.d/50-antigoblin.sh`** снимается (дублировал `usb.d/`, стрелял дважды на USB-remount).
+Что делает update:
 
-Чтобы пересеять sample-конфиги к версии из репозитория, добавь `ANTIGOBLIN_FORCE=1`. **04_outbounds.json и 05_routing.json** намеренно исключены из force-reseed — sample-версии не содержат `vless-reality` outbound, и xray после force-reseed упал бы до первого Save+Apply.
+1. Проверяет, что AntiGoblin уже установлен в `/opt`.
+2. Скачивает свежий `install.sh` из `Lagbag/AntiGoblin:main`.
+3. Делает pre-upgrade backup в `/opt/var/backups/antigoblin/pre-upgrade-YYYYMMDD-HHMMSS/`. В backup попадают UI state, Xray JSON, sing-box JSON, версия и конфиг порта. Хранятся последние 5 pre-upgrade копий.
+4. Обновляет UI, backend, init-скрипты, watchdog/hooks и при необходимости зависимости / Hiddify sing-box.
+5. **Не перезаписывает** пользовательский state и сгенерированные routing/outbound-конфиги.
+6. Перезапускает runtime и UI.
+
+Проверить установленную версию:
+
+```sh
+cat /opt/share/xkeen-manager/VERSION
+```
+
+Если update оборвался на скачивании или `opkg`, старые пользовательские конфиги уже не стираются. Если проблема появилась после успешного обновления, нужная предыдущая копия лежит в `/opt/var/backups/antigoblin/`.
+
+### Установка или обновление из ZIP, скачанного из чата
+
+Если ты ещё **не залил изменения на GitHub**, распакуй ZIP на компьютере и скопируй всю папку `AntiGoblin-main` на Entware-накопитель роутера любым удобным способом. Затем в shell роутера:
+
+```sh
+cd /путь/к/AntiGoblin-main
+
+# Если AntiGoblin уже стоит — обновление на месте, без удаления state/ключей/правил
+ANTIGOBLIN_SRC_DIR="$PWD" /opt/bin/sh ./install.sh --update
+
+# Если это первая установка на чистый роутер
+# ANTIGOBLIN_SRC_DIR="$PWD" /opt/bin/sh ./install.sh --install
+```
+
+`ANTIGOBLIN_SRC_DIR` заставляет installer использовать **эту локальную копию**, а не `main` на GitHub. При `--update` перед заменой файлов всё равно создаётся pre-upgrade backup.
 
 ## Удаление
 
+Обычное удаление сначала сохраняет backup, снимает runtime-правила, init/cron/hooks и удаляет UI. Xray/sing-box конфиги намеренно остаются как страховка:
+
 ```sh
-# 1. Остановить сервисы
-/opt/etc/init.d/S26antigoblin stop
-/opt/etc/init.d/S25antigoblin-selfheal stop
-/opt/etc/init.d/S24antigoblin-singbox stop
-
-# 2. Удалить init/cron/ndm-хуки
-rm -f /opt/etc/init.d/S20antigoblin-sysctl /opt/etc/init.d/S24antigoblin-singbox \
-      /opt/etc/init.d/S25antigoblin-selfheal /opt/etc/init.d/S26antigoblin
-rm -f /opt/etc/cron.1min/50-antigoblin-selfheal
-rm -f /opt/etc/ndm/usb.d/50-antigoblin.sh /opt/etc/ndm/netfilter.d/50-antigoblin.sh \
-      /opt/etc/ndm/fs.d/50-antigoblin.sh
-# ^^ fs.d/50-antigoblin.sh больше не устанавливается (starting v1.1.x), но
-#    строка выше снимет его, если он остался от старой версии.
-
-# 3. Снести iptables-цепочки и ipset-ы (S26antigoblin stop UI-часть, но не netfilter).
-#    MARK политики xkeen у каждого роутера свой (0xffffaaX). Читаем из
-#    /tmp/xkeen-mark (кэш пишется selfheal/apply при каждом успешном ndmc-запросе).
-#    Если файла нет — fallback на дефолтное значение первой политики Keenetic.
-MARK="0x$(cat /tmp/xkeen-mark 2>/dev/null)"
-case "$MARK" in 0x) MARK=0xffffaab ;; esac
-iptables -t nat -D PREROUTING -m connmark --mark "$MARK" -m conntrack ! --ctstate INVALID -j xkeen 2>/dev/null || true
-iptables -t mangle -D PREROUTING -p udp -m connmark --mark "$MARK" -m conntrack ! --ctstate INVALID -m set --match-set xkeen_udp_route dst -j xkeen_udp_route 2>/dev/null || true
-iptables -t nat -F xkeen 2>/dev/null; iptables -t nat -X xkeen 2>/dev/null
-iptables -t mangle -F xkeen_udp_route 2>/dev/null; iptables -t mangle -X xkeen_udp_route 2>/dev/null
-ipset destroy xkeen_udp_route 2>/dev/null; ipset destroy xkeen_bypass 2>/dev/null
-
-# 4. Удалить UI, backend, конфиг порта и логи
-rm -rf /opt/share/xkeen-manager
-rm -f  /opt/etc/antigoblin.conf
-rm -f  /opt/var/log/xkeen-*.log /opt/var/log/sing-box-xkeen.log
-rm -f  /opt/var/run/antigoblin-selfheal-loop.pid
-rm -rf /opt/etc/xray/configs/*.bak-ui-* 2>/dev/null || true
+/opt/bin/curl -fsSL -o /opt/tmp/antigoblin-uninstall.sh \
+  https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/uninstall.sh
+/opt/bin/sh /opt/tmp/antigoblin-uninstall.sh
 ```
 
-**Не удаляется автоматически:**
+Если нужно удалить ещё и AntiGoblin-конфиги Xray/sing-box:
 
-- Политика Keenetic `xkeen` в Keenetic UI («Приоритеты подключений»).
-- Конфиги в `/opt/etc/xray/configs/` и `/opt/etc/sing-box/` (полезны как бэкап; можно снести вручную `rm -rf`).
-- Бинарь `/opt/sbin/sing-box` (installer его ставил).
-- sysctl-твики от `S20antigoblin-sysctl` — сохраняются в памяти до перезагрузки роутера, безопасно.
-- Cache DNS-резолвера `/tmp/xkeen-dns-cache/` — очистится сама при перезагрузке.
+```sh
+/opt/bin/sh /opt/tmp/antigoblin-uninstall.sh --purge
+```
+
+`uninstall.sh` **не удаляет автоматически**:
+
+- политику Keenetic `xkeen` — её лучше снять вручную в web UI, чтобы случайно не удалить политику с назначенными устройствами;
+- `/opt/sbin/sing-box` — бинарь может использоваться другими настройками;
+- каталог backup `/opt/var/backups/antigoblin/`.
+
+После обычного удаления путь к сохранённой копии печатается в терминал.
 
 ## Разработка
 
@@ -539,8 +591,8 @@ Install-Module Posh-SSH -Scope CurrentUser -Force
 
 | Компонент | Роль в `AntiGoblin` | Лицензия |
 |-----------|----------------------|----------|
-| [XTLS/Xray-core](https://github.com/XTLS/Xray-core) | TCP transparent proxy на `:61219`. Outbound зависит от активного ключа: VLESS/VMess через любой из `tcp`/`ws`/`grpc`/`xhttp` поверх `reality`/`tls`/`none`; для `hysteria2` xray ходит SOCKS5'ом в локальный sing-box. Локальный Shadowsocks-relay для xray-протокольных UDP. | MPL-2.0 |
-| [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | TPROXY UDP inbound на `:61221` для voice/RTC-трафика. Для xray-протокольных ключей релит UDP в xray на `:62640`; для `hysteria2` хостит mixed-inbound на `127.0.0.1:61225` для TCP-моста от xray и сам терминирует hysteria2-outbound. | GPL-3.0 |
+| [XTLS/Xray-core](https://github.com/XTLS/Xray-core) | TCP transparent proxy на `:61219`. URI VLESS/VMess терминируются Xray напрямую; для sing-box-backed протоколов Xray ходит SOCKS5'ом в локальный sing-box. Локальный Shadowsocks-relay обслуживает UDP для Xray-native ключей. | MPL-2.0 |
+| [hiddify/hiddify-sing-box](https://github.com/hiddify/hiddify-sing-box) / [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | TPROXY UDP inbound `:61221`, mixed bridge `127.0.0.1:61225` и upstream для Hysteria(2), Trojan, SS, TUIC, AnyTLS, SOCKS/HTTP/SSH/Naive и raw standalone sing-box/Hiddify outbounds/endpoints (включая WireGuard). Installer предпочитает Hiddify build на arm64/amd64 и умеет fallback на upstream sing-box. | GPL-3.0 |
 | [Entware](https://github.com/Entware/Entware) | Linux-окружение `/opt` на роутере: `opkg`, базовые утилиты, init-инфраструктура. | GPL-2.0 |
 | [uhttpd_kn](https://github.com/Entware/Entware/tree/master/sources/uhttpd_kn) | HTTP-сервер, на котором живёт UI на порту `:8899`. | ISC |
 | [iptables](https://www.netfilter.org/projects/iptables/) + [ipset](https://ipset.netfilter.org/) | Mark-based selective routing для устройств политики `xkeen`. | GPL-2.0 |

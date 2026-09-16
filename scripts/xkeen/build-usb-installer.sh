@@ -46,7 +46,9 @@ set -euo pipefail
 
 ARCH=""
 VERSION=""
-SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.8}"
+SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.21}"
+HIDDIFY_SING_BOX_VERSION="${HIDDIFY_SING_BOX_VERSION:-1.13.0.h5}"
+ANTIGOBLIN_SING_BOX_FLAVOR="${ANTIGOBLIN_SING_BOX_FLAVOR:-hiddify}"
 ENTWARE_MIRROR="${ENTWARE_MIRROR:-https://bin.entware.net}"
 
 while [ $# -gt 0 ]; do
@@ -70,10 +72,12 @@ case "$ARCH" in
   aarch64)
     ENTWARE_ARCH="aarch64-k3.10"
     SB_CANDIDATES="arm64-musl arm64"
+    HIDDIFY_SB_ARCH="arm64"
     ;;
   armv7)
     ENTWARE_ARCH="armv7sf-k3.2"
     SB_CANDIDATES="armv7-musl armv7"
+    HIDDIFY_SB_ARCH=""
     ;;
   *)
     echo "Unsupported --arch=$ARCH. Supported: aarch64, armv7" >&2
@@ -101,7 +105,7 @@ mkdir -p "$DIST_DIR"
 
 log() { printf '[build-usb-installer] %s\n' "$*"; }
 
-log "arch=$ARCH  entware=$ENTWARE_ARCH  sing-box=$SING_BOX_VERSION  version=$VERSION"
+log "arch=$ARCH  entware=$ENTWARE_ARCH  sing-box=$SING_BOX_VERSION  hiddify-sing-box=$HIDDIFY_SING_BOX_VERSION  version=$VERSION"
 log "work-dir=$WORK_DIR"
 
 # ---- 1. Download and unpack upstream Entware installer ----
@@ -123,17 +127,30 @@ tar -xzf "$WORK_DIR/entware.tar.gz" -C "$STAGE"
   || { echo "Entware tarball layout unexpected (no bin/ or etc/ at root) — mirror layout changed?" >&2; exit 1; }
 
 # ---- 2. Fetch and stage sing-box binary ----
-log "Fetching sing-box $SING_BOX_VERSION for candidates: $SB_CANDIDATES"
+log "Fetching sing-box core"
 SB_TARBALL="$WORK_DIR/sing-box.tar.gz"
 SB_INSTALLED=""
-for sb_arch in $SB_CANDIDATES; do
-  URL="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${sb_arch}.tar.gz"
-  log "  trying $sb_arch"
+
+if [ "$ANTIGOBLIN_SING_BOX_FLAVOR" = "hiddify" ] && [ -n "$HIDDIFY_SB_ARCH" ]; then
+  URL="https://github.com/hiddify/hiddify-sing-box/releases/download/v${HIDDIFY_SING_BOX_VERSION}/sing-box-${HIDDIFY_SING_BOX_VERSION}-linux-${HIDDIFY_SB_ARCH}.tar.gz"
+  log "  trying Hiddify ${HIDDIFY_SING_BOX_VERSION} ($HIDDIFY_SB_ARCH)"
   if curl -fsSL --retry 2 -o "$SB_TARBALL" "$URL" 2>/dev/null; then
-    SB_INSTALLED="$sb_arch"
-    break
+    SB_INSTALLED="hiddify-$HIDDIFY_SB_ARCH"
+  else
+    log "  Hiddify asset unavailable, falling back to upstream"
   fi
-done
+fi
+
+if [ -z "$SB_INSTALLED" ]; then
+  for sb_arch in $SB_CANDIDATES; do
+    URL="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${sb_arch}.tar.gz"
+    log "  trying upstream $sb_arch"
+    if curl -fsSL --retry 2 -o "$SB_TARBALL" "$URL" 2>/dev/null; then
+      SB_INSTALLED="$sb_arch"
+      break
+    fi
+  done
+fi
 [ -n "$SB_INSTALLED" ] || { echo "Failed to download sing-box for any of: $SB_CANDIDATES" >&2; exit 1; }
 log "  got sing-box for $SB_INSTALLED"
 
@@ -146,6 +163,14 @@ SB_BIN="$(find "$SB_EXTRACT" -type f -name sing-box | head -n 1)"
 mkdir -p "$STAGE/sbin"
 cp "$SB_BIN" "$STAGE/sbin/sing-box"
 chmod 755 "$STAGE/sbin/sing-box"
+CRONET_LIB="$(find "$SB_EXTRACT" -type f -name 'libcronet.so*' | head -n 1)"
+if [ -n "$CRONET_LIB" ]; then
+  mkdir -p "$STAGE/lib" "$STAGE/sbin"
+  cp "$CRONET_LIB" "$STAGE/lib/"
+  cp "$CRONET_LIB" "$STAGE/sbin/$(basename "$CRONET_LIB")"
+  chmod 755 "$STAGE/lib/$(basename "$CRONET_LIB")" "$STAGE/sbin/$(basename "$CRONET_LIB")" 2>/dev/null || true
+  log "  staged bundled libcronet for NaiveProxy"
+fi
 
 # ---- 3. Stage AntiGoblin sources ----
 # Copy the whole repository (minus dev/local noise) into

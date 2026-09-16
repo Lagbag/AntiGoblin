@@ -3,11 +3,11 @@
 #
 # Использование в http://192.168.1.1/a после установки Entware:
 #
-#   exec sh -c "/opt/bin/curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
+#   exec sh -c "/opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
 #
 # Если curl ещё не установлен в Entware:
 #
-#   exec sh -c "/opt/bin/opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.githubusercontent.com/MaksimSamarin/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
+#   exec sh -c "/opt/bin/opkg install curl >/dev/null 2>&1; /opt/bin/curl -fsSL https://raw.githubusercontent.com/Lagbag/AntiGoblin/main/scripts/xkeen/antigoblin-web-cli-install.sh | /opt/bin/sh"
 #
 # Этот скрипт не ставит Entware. Он только запускает обычный on-router
 # установщик AntiGoblin из Web CLI без отдельного SSH-подключения.
@@ -17,7 +17,7 @@ set -eu
 PATH=/opt/sbin:/opt/bin:/opt/usr/sbin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-REPO_OWNER="${ANTIGOBLIN_REPO_OWNER:-MaksimSamarin}"
+REPO_OWNER="${ANTIGOBLIN_REPO_OWNER:-Lagbag}"
 REPO_NAME="${ANTIGOBLIN_REPO_NAME:-AntiGoblin}"
 REPO_BRANCH="${ANTIGOBLIN_REPO_BRANCH:-main}"
 INSTALL_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}/install.sh"
@@ -100,7 +100,7 @@ main() {
   chmod 700 "$INSTALL_FILE" 2>/dev/null || true
 
   log "Запускаем установщик AntiGoblin"
-  exec /opt/bin/sh "$INSTALL_FILE"
+  exec /opt/bin/sh "$INSTALL_FILE" "$@"
 }
 
 main "$@"

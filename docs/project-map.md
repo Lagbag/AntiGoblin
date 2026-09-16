@@ -71,7 +71,7 @@ Generic sample-конфиги. `install.sh` копирует их в `/opt/etc/x
 | `04_outbounds.sample.json` | `/opt/etc/xray/configs/04_outbounds.json` |
 | `05_routing.sample.json` | `/opt/etc/xray/configs/05_routing.json` |
 | `xkeen-ui-state.sample.json` | `/opt/share/xkeen-manager/xkeen-ui-state.json` (источник истины UI) |
-| `sing-box-xkeen.sample.json` | `/opt/etc/sing-box/xkeen.json` (UDP TPROXY → SS-relay) |
+| `sing-box-xkeen.sample.json` | `/opt/etc/sing-box/xkeen.json` (базовый UDP TPROXY; UI генерирует либо SS-relay к Xray, либо mixed bridge + активный sing-box outbound/endpoint) |
 
 В этой папке не должно быть live-снапшотов роутера и личных черновиков.
 

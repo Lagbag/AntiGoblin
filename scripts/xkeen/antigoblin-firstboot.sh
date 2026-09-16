@@ -50,7 +50,7 @@ PID_FILE=/opt/var/run/antigoblin-firstboot.pid
 # rc.unslung can source this file more than once (and npkg may invoke it while
 # changing initrc). One worker is enough. A stale PID from a power loss is
 # discarded on the next invocation.
-mkdir -p /opt/var/run 2>/dev/null || true
+mkdir -p /opt/var/run /opt/var/log 2>/dev/null || true
 if [ ! -f "$DONE_FLAG" ]; then
   old_pid="$(cat "$PID_FILE" 2>/dev/null)"
   if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
@@ -101,21 +101,21 @@ if [ ! -f "$DONE_FLAG" ]; then
 
   # Npkg extracts this file before its own Entware bootstrap has installed
   # opkg/busybox. Poll in the background rather than relying on a later boot.
-  # Five-second ticks keep the common case fast while avoiding a busy loop on
-  # the tiny router CPU. The finite cap makes a genuinely broken Entware setup
+  # Two-second ticks keep first boot responsive while remaining negligible on
+  # the router CPU. The finite cap makes a genuinely broken Entware setup
   # visible in the log instead of leaving an immortal process behind.
   i=0
-  while [ "$i" -lt 360 ]; do
+  while [ "$i" -lt 900 ]; do
     if [ -x /opt/bin/opkg ] && [ -x /opt/bin/busybox ]; then
       break
     fi
     if [ "$i" -eq 0 ]; then
       log "Entware not ready yet; waiting in background (up to 30 minutes)"
     fi
-    sleep 5
+    sleep 2
     i=$((i + 1))
   done
-  [ "$i" -lt 360 ] || die "Entware did not become ready within 30 minutes"
+  [ "$i" -lt 900 ] || die "Entware did not become ready within 30 minutes"
 
   log "=== AntiGoblin first-boot begin ==="
 

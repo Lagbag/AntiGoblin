@@ -24,17 +24,18 @@
 └─────┬───────────────────────────────────┬──────────────────┘
       │ TCP                               │ UDP
 ┌─────▼──────────────────────┐  ┌─────────▼─────────────┐
-│ xray (61219, 62640)         │  │ sing-box (61221)      │
-│ - dokodemo-door TCP 61219   │  │ - tproxy UDP 61221    │
-│ - shadowsocks relay 62640   │  │ - SS outbound to      │
-│ - vless-reality outbound    │  │   127.0.0.1:62640     │
-│ - direct outbound           │  │   (xray relay)        │
+│ xray (61219, 62640)         │  │ sing-box               │
+│ - dokodemo-door TCP 61219   │  │ - tproxy UDP 61221     │
+│ - shadowsocks relay 62640   │  │ - mixed SOCKS 61225    │
+│ - stable VPN route tag      │  │ - non-Xray upstream    │
+│ - VLESS/VMess native OR     │  │   HY2/TUIC/Trojan/...  │
+│   SOCKS5 -> sing-box 61225  │  │ - SS -> xray:62640     │
+│ - direct outbound           │  │   for Xray-native UDP  │
 │                             │  └───────────┬───────────┘
-│  routing.json решает         │              │
-│   group → vless / direct    │◄─────────────┘
+│  routing.json: VPN/direct   │◄─────────────┘
 └──────────────┬──────────────┘
                │
-        VLESS Reality сервер
+        active upstream
 ```
 
 ## Что делает Keenetic, что делает Entware
@@ -61,7 +62,7 @@ REDIRECT всё остальное TCP -> 61219 (xray)
 RETURN  fallback
 ```
 
-`xray` на :61219 — `dokodemo-door` inbound. Дальше `05_routing.json` отправляет поток в outbound `vless-reality` или `direct`.
+`xray` на :61219 — `dokodemo-door` inbound. Дальше `05_routing.json` отправляет поток в outbound с историческим тегом `vless-reality` или `direct`. Для URI VLESS/VMess этот outbound терминируется Xray напрямую. Для Hysteria(2), Trojan, Shadowsocks, TUIC, AnyTLS, SOCKS/HTTP/SSH/Naive и raw sing-box/Hiddify outbound/endpoint (включая WireGuard) тег остаётся тем же, но внутри это SOCKS5-hop на mixed-inbound sing-box `127.0.0.1:61225`.
 
 ### UDP
 
@@ -70,9 +71,9 @@ PREROUTING  UDP, dst ∈ xkeen_udp_route -> TPROXY :61221 (sing-box)
             всё остальное UDP -> direct (никаких хуков нет)
 ```
 
-`sing-box` на :61221 принимает TPROXY-UDP и проксирует его в локальный xray Shadowsocks-relay (`127.0.0.1:62640`). Уже оттуда xray по тегу inbound отправляет UDP в outbound `vless-reality`.
+`sing-box` на :61221 принимает TPROXY-UDP. Если активен Xray-native VLESS/VMess, UDP проксируется в локальный Xray Shadowsocks-relay (`127.0.0.1:62640`) и уже Xray отправляет его в активный VPN outbound. Если активен sing-box-backed протокол, UDP сразу уходит в тот же sing-box outbound/endpoint, который используется TCP-мостом.
 
-Эта схема воспроизводит локальный путь `v2rayN` (TUN → SS-relay → xray VLESS) и стабильно работает для realtime-UDP, в т.ч. Discord voice. Прямой путь `xray TPROXY → vless-reality` retired как нерабочий: для realtime-UDP он давал стабильный 5000 мс ping.
+Для Xray-native ключей эта схема воспроизводит локальный путь `v2rayN` (TUN → SS-relay → Xray VLESS/VMess). Прямой путь `xray TPROXY → vless-reality` retired; sing-box остаётся единой точкой TPROXY для UDP независимо от выбранного upstream.
 
 ### Что задаёт UI-группа
 
@@ -106,8 +107,8 @@ xray socks-in inbound
      (правило захардкожено в `buildRoutingDocument` в `app.js`, всегда
      генерируется при apply, не зависит от групп в UI)
   │
-  ▼  vless-reality outbound → активный ключ VPN
-     (или SOCKS5 → sing-box 61225 если активный ключ hysteria2)
+  ▼  vless-reality route tag → активный ключ VPN
+     (VLESS/VMess в Xray или SOCKS5 → sing-box:61225 для остальных)
 ```
 
 Зачем: для приложений с anycast/динамическими IP серверов, когда ловить назначения в UI-группы вручную неудобно. Все пакеты приложения гарантированно идут через VPN с одного exit-IP.
@@ -130,6 +131,7 @@ KeeneticOS при некоторых событиях (WAN reconnect, WiFi clien
 
 - `/opt/etc/xray/configs/04_outbounds.json`
 - `/opt/etc/xray/configs/05_routing.json`
+- `/opt/etc/sing-box/xkeen.json`
 
 И собирает runtime-наборы `xkeen_bypass` и `xkeen_udp_route`. И apply из UI, и self-heal используют один и тот же код в `/opt/share/xkeen-manager/api/xkeen-runtime.sh` — расхождения между ними невозможны.
 
@@ -139,8 +141,10 @@ KeeneticOS при некоторых событиях (WAN reconnect, WiFi clien
 
 - проверяет, что политика `xkeen` существует — если её удалили в Keenetic UI, создаёт заново как `Policy42+`;
 - проверяет, что `xray` жив, слушает `61219`, имеет приемлемый `fd`/`conntrack`/память;
+- определяет, кто реально держит удалённый VPN-сокет: Xray для VLESS/VMess или sing-box для bridge-протоколов, и считает socket-health по правильному PID;
 - проверяет, что `PREROUTING -> xkeen` на месте, и при необходимости пересобирает цепочку;
 - проверяет, что `sing-box` слушает `61221`, если в UI есть хотя бы одна группа с outbound `vless-reality`;
+- если активный профиль требует sing-box bridge, проверяет mixed-inbound `127.0.0.1:61225` и поднимает sing-box при его пропаже;
 - раз в ~5 минут пересобирает `xkeen_bypass` и `xkeen_udp_route` (DNS-имена могут резолвиться в новые IP) через `ipset swap` — без рестарта `xray`;
 - пишет health-snapshot в `/opt/var/log/xkeen-health.log`;
 - пишет действия в `/opt/var/log/xkeen-selfheal.log`.

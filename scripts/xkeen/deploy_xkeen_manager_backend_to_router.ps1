@@ -174,33 +174,53 @@ done
 Invoke-RouterCommand -Command $cronCmd
 $installSingbox = @'
 if ! command -v sing-box >/dev/null 2>&1; then
-  SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.8}"
+  SING_BOX_VERSION="${SING_BOX_VERSION:-1.13.21}"
+  HIDDIFY_SING_BOX_VERSION="${HIDDIFY_SING_BOX_VERSION:-1.13.0.h5}"
+  HIDDIFY_ARCH=""
   case "$(uname -m)" in
-    aarch64|arm64)   ARCH_CANDIDATES="arm64-musl arm64" ;;
+    aarch64|arm64)   HIDDIFY_ARCH="arm64"; ARCH_CANDIDATES="arm64-musl arm64" ;;
     armv7l|armv7*)   ARCH_CANDIDATES="armv7-musl armv7" ;;
-    mipsel*)         ARCH_CANDIDATES="mipsle-softfloat mipsle" ;;
-    mips*)           ARCH_CANDIDATES="mips-softfloat mips" ;;
-    x86_64|amd64)    ARCH_CANDIDATES="amd64-musl amd64" ;;
+    armv6l|armv6*)   ARCH_CANDIDATES="armv6" ;;
+    mipsel*)         ARCH_CANDIDATES="mipsle-softfloat-musl mipsle-softfloat mipsle" ;;
+    mips*)           ARCH_CANDIDATES="mips-softfloat-musl mips-softfloat mips" ;;
+    x86_64|amd64)    HIDDIFY_ARCH="amd64"; ARCH_CANDIDATES="amd64-musl amd64" ;;
     *)               ARCH_CANDIDATES="$(uname -m)" ;;
   esac
   FETCH="curl"; [ -x /opt/bin/curl ] || FETCH="wget"
   rm -rf /tmp/antigoblin-sing-box /tmp/antigoblin-sing-box.tar.gz
   mkdir -p /tmp/antigoblin-sing-box
   ok=0
-  for arch_try in $ARCH_CANDIDATES; do
-    url="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${arch_try}.tar.gz"
+  if [ -n "$HIDDIFY_ARCH" ]; then
+    url="https://github.com/hiddify/hiddify-sing-box/releases/download/v${HIDDIFY_SING_BOX_VERSION}/sing-box-${HIDDIFY_SING_BOX_VERSION}-linux-${HIDDIFY_ARCH}.tar.gz"
     if [ "$FETCH" = "curl" ]; then
-      /opt/bin/curl -fsSL -o /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && { ok=1; break; }
+      /opt/bin/curl -fsSL -o /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && ok=1 || true
     else
-      wget -q -O /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && { ok=1; break; }
+      wget -q -O /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && ok=1 || true
     fi
-  done
+  fi
+  if [ "$ok" != "1" ]; then
+    for arch_try in $ARCH_CANDIDATES; do
+      url="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${arch_try}.tar.gz"
+      if [ "$FETCH" = "curl" ]; then
+        /opt/bin/curl -fsSL -o /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && { ok=1; break; }
+      else
+        wget -q -O /tmp/antigoblin-sing-box.tar.gz "$url" 2>/dev/null && { ok=1; break; }
+      fi
+    done
+  fi
   if [ "$ok" = "1" ]; then
     tar -xzf /tmp/antigoblin-sing-box.tar.gz -C /tmp/antigoblin-sing-box
     SING_BOX_BIN="$(find /tmp/antigoblin-sing-box -type f -name sing-box | head -n 1)"
     if [ -n "$SING_BOX_BIN" ]; then
       cp "$SING_BOX_BIN" /opt/sbin/sing-box
       chmod 755 /opt/sbin/sing-box
+    fi
+    CRONET_LIB="$(find /tmp/antigoblin-sing-box -type f -name 'libcronet.so*' | head -n 1)"
+    if [ -n "$CRONET_LIB" ]; then
+      mkdir -p /opt/lib /opt/sbin
+      cp "$CRONET_LIB" /opt/lib/
+      cp "$CRONET_LIB" "/opt/sbin/$(basename "$CRONET_LIB")"
+      chmod 755 "/opt/lib/$(basename "$CRONET_LIB")" "/opt/sbin/$(basename "$CRONET_LIB")" 2>/dev/null || true
     fi
   fi
 fi

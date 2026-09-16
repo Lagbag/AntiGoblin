@@ -305,6 +305,42 @@ parse_qs_param() {
   '
 }
 
+load_vpn_endpoint() {
+  VPN_HOST=""
+  VPN_PORT=0
+  VPN_SNI=""
+  VPN_PROC="xray"
+  VPN_PID="${XRAY_PID:-}"
+
+  if [ -f "$OUTBOUNDS_PATH" ] && command -v /opt/bin/jq >/dev/null 2>&1; then
+    VPN_HOST="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].address // ""' "$OUTBOUNDS_PATH" 2>/dev/null | head -1)"
+    VPN_PORT="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].port // 0' "$OUTBOUNDS_PATH" 2>/dev/null | head -1)"
+    VPN_SNI="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|(.streamSettings.realitySettings.serverName // .streamSettings.tlsSettings.serverName // "")' "$OUTBOUNDS_PATH" 2>/dev/null | head -1)"
+  fi
+
+  # For sing-box-backed protocols Xray's stable "vless-reality" tag is a
+  # loopback SOCKS bridge and therefore has no vnext endpoint. Read the real
+  # remote from sing-box instead so health/diagnostics don't report 0:0.
+  if [ -z "$VPN_HOST" ] && [ -f /opt/etc/sing-box/xkeen.json ] && command -v /opt/bin/jq >/dev/null 2>&1; then
+    VPN_HOST="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="proxy")|.server // ""' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+    VPN_PORT="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="proxy")|.server_port // 0' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+    VPN_SNI="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="proxy")|.tls.server_name // ""' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+    # sing-box >= 1.13 represents WireGuard as an endpoint, not an outbound.
+    # Endpoint tags are valid routing targets, so read the first peer for
+    # health metrics when the active proxy is endpoint-backed.
+    if [ -z "$VPN_HOST" ]; then
+      VPN_HOST="$(/opt/bin/jq -r '.endpoints[]?|select(.tag=="proxy")|.peers[0].address // ""' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+      VPN_PORT="$(/opt/bin/jq -r '.endpoints[]?|select(.tag=="proxy")|.peers[0].port // 0' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+    fi
+    if [ -n "$VPN_HOST" ]; then
+      VPN_PROC="sing-box"
+      VPN_PID="${SB_PID:-}"
+    fi
+  fi
+
+  case "$VPN_PORT" in ''|*[!0-9]*) VPN_PORT=0 ;; esac
+}
+
 emit_health() {
   XRAY_PID="$(get_xray_pid)"
   SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
@@ -355,7 +391,7 @@ emit_health() {
     UDP_IPSET_SIZE="$(ipset list xkeen_udp_route 2>/dev/null | /opt/bin/awk '/^Members:/ { m=1; next } m && NF { c++ } END { print c+0 }')"
   fi
   BYPASS_IPSET_SIZE=0
-  if [ "$BYPASS_IPSET_OK" = "1" ]; then
+  if [ "$BYPASS_IPSET_OK" = "ok" ]; then
     BYPASS_IPSET_SIZE="$(ipset list xkeen_bypass 2>/dev/null | /opt/bin/awk '/^Members:/ { m=1; next } m && NF { c++ } END { print c+0 }')"
   fi
 
@@ -377,18 +413,12 @@ emit_health() {
   case "$CT_MAX"   in ''|*[!0-9]*) CT_MAX=0 ;; esac
 
   # VPN socket metrics
-  VPN_HOST=""
-  VPN_PORT=0
+  load_vpn_endpoint
   VPN_IP=""
   VPN_ESTABLISHED=0
   VPN_FIN_WAIT=0
   VPN_ORPHAN_FIN=0
   VPN_TOTAL=0
-  if [ -f /opt/etc/xray/configs/04_outbounds.json ] && command -v /opt/bin/jq >/dev/null 2>&1; then
-    VPN_HOST="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].address // ""' /opt/etc/xray/configs/04_outbounds.json 2>/dev/null | head -1)"
-    VPN_PORT="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].port // 0' /opt/etc/xray/configs/04_outbounds.json 2>/dev/null | head -1)"
-  fi
-  case "$VPN_PORT" in ''|*[!0-9]*) VPN_PORT=0 ;; esac
   if [ -n "$VPN_HOST" ] && [ "$VPN_PORT" -gt 0 ]; then
     if type xkeen_resolve_ipv4 >/dev/null 2>&1; then
       VPN_IP="$(xkeen_resolve_ipv4 "$VPN_HOST" | head -1)"
@@ -396,12 +426,11 @@ emit_health() {
       VPN_IP="$(nslookup "$VPN_HOST" 2>/dev/null | /opt/bin/awk '/^Name:/{seen=1;next} seen&&/^Address [0-9]+:/{print $3;exit} seen&&/^Address:/{print $2;exit}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
     fi
   fi
-  if [ -n "$XRAY_PID" ] && [ -n "$VPN_IP" ] && [ "$VPN_PORT" -gt 0 ]; then
-    # Match PID/xray exactly on the last netstat field — grep "$PID/xray"
-    # would substring-match e.g. 4567/xray inside 14567/xray-something,
-    # inflating counts once a similar PID appears on another socket.
-    SOCK_LINES="$(netstat -anp 2>/dev/null | /opt/bin/awk -v pid="$XRAY_PID" -v ep="${VPN_IP}:${VPN_PORT}" '
-      $NF == pid "/xray" && ($4 == ep || $5 == ep) { print }
+  if [ -n "$VPN_PID" ] && [ -n "$VPN_IP" ] && [ "$VPN_PORT" -gt 0 ]; then
+    # Match PID/process exactly on the last netstat field. The real remote
+    # process is Xray for VLESS/VMess and sing-box for bridged protocols.
+    SOCK_LINES="$(netstat -anp 2>/dev/null | /opt/bin/awk -v pid="$VPN_PID" -v proc="$VPN_PROC" -v ep="${VPN_IP}:${VPN_PORT}" '
+      $NF == pid "/" proc && ($4 == ep || $5 == ep) { print }
     ')"
     VPN_TOTAL="$(printf '%s\n' "$SOCK_LINES" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
     VPN_ESTABLISHED="$(printf '%s\n' "$SOCK_LINES" | grep -c 'ESTABLISHED' || true)"
@@ -420,6 +449,8 @@ emit_health() {
   HEALTH_STATUS="ok"
   if [ -z "$XRAY_PID" ]; then
     HEALTH_STATUS="xray_down"
+  elif [ "$VPN_PROC" = "sing-box" ] && [ -z "$SB_PID" ]; then
+    HEALTH_STATUS="singbox_down"
   elif [ "$XRAY_FD" -ge 600 ]; then
     HEALTH_STATUS="fd_critical"
   elif [ "$VPN_ORPHAN_FIN" -ge 30 ]; then
@@ -468,6 +499,8 @@ emit_health() {
     --argjson vpn_orphan_fin "$VPN_ORPHAN_FIN" \
     --argjson vpn_total "$VPN_TOTAL" \
     --arg vpn_host "${VPN_HOST:-}" \
+    --argjson vpn_port "${VPN_PORT:-0}" \
+    --arg vpn_process "${VPN_PROC:-xray}" \
     --arg health_status "$HEALTH_STATUS" \
     '{
       ok: true,
@@ -488,6 +521,8 @@ emit_health() {
       conntrack: { count: $ct_count, max: $ct_max },
       vpnTunnel: {
         host: $vpn_host,
+        port: $vpn_port,
+        process: $vpn_process,
         established: $vpn_established,
         finWait: $vpn_fin_wait,
         orphanFin: $vpn_orphan_fin,
@@ -546,6 +581,9 @@ emit_logs() {
 }
 
 emit_stack_info() {
+  XRAY_PID="$(get_xray_pid)"
+  SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
+  AG_VER="$(head -n 1 /opt/share/xkeen-manager/VERSION 2>/dev/null | tr -d '\r\n')"
   XRAY_VER="$(/opt/sbin/xray version 2>/dev/null | head -n 1 | /opt/bin/awk '{print $2}')"
   SB_VER="$(/opt/sbin/sing-box version 2>/dev/null | head -n 1 | /opt/bin/awk '{print $3}')"
   KERNEL="$(uname -r 2>/dev/null)"
@@ -553,16 +591,7 @@ emit_stack_info() {
   UPTIME_SEC="$(/opt/bin/awk '{ printf "%d", int($1) }' /proc/uptime 2>/dev/null)"
   case "$UPTIME_SEC" in ''|*[!0-9]*) UPTIME_SEC=0 ;; esac
 
-  OUTBOUNDS_FILE=/opt/etc/xray/configs/04_outbounds.json
-  VPN_HOST=""
-  VPN_PORT=0
-  VPN_SNI=""
-  if [ -f "$OUTBOUNDS_FILE" ] && command -v /opt/bin/jq >/dev/null 2>&1; then
-    VPN_HOST="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].address // ""' "$OUTBOUNDS_FILE" 2>/dev/null)"
-    VPN_PORT="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.settings.vnext[0].port // 0' "$OUTBOUNDS_FILE" 2>/dev/null)"
-    VPN_SNI="$(/opt/bin/jq -r '.outbounds[]?|select(.tag=="vless-reality")|.streamSettings.realitySettings.serverName // ""' "$OUTBOUNDS_FILE" 2>/dev/null)"
-  fi
-  case "$VPN_PORT" in ''|*[!0-9]*) VPN_PORT=0 ;; esac
+  load_vpn_endpoint
   VPN_IP=""
   if [ -n "$VPN_HOST" ]; then
     if type xkeen_resolve_ipv4 >/dev/null 2>&1; then
@@ -638,6 +667,7 @@ emit_stack_info() {
   case "$DISK_AVAIL_KB" in ''|*[!0-9]*) DISK_AVAIL_KB=0 ;; esac
 
   PAYLOAD="$(/opt/bin/jq -n \
+    --arg ag_ver "$AG_VER" \
     --arg xray_ver "$XRAY_VER" \
     --arg sb_ver "$SB_VER" \
     --arg kernel "$KERNEL" \
@@ -666,7 +696,7 @@ emit_stack_info() {
     --arg disk_mount "$DISK_MOUNT" \
     '{
       ok: true,
-      versions: { xray: $xray_ver, singbox: $sb_ver, kernel: $kernel, hostname: $hostname, uptimeSec: $uptime_sec },
+      versions: { antigoblin: $ag_ver, xray: $xray_ver, singbox: $sb_ver, kernel: $kernel, hostname: $hostname, uptimeSec: $uptime_sec },
       vpn:      { host: $vpn_host, port: $vpn_port, sni: $vpn_sni, exitIp: $vpn_ip },
       network:  { wanIface: $wan_iface, wanIp: $wan_ip, gateway: $gw, lanNet: $lan_net },
       xkeen:    { policyName: $policy_name, policyDescription: $policy_desc, mark: $xkeen_mark, tproxyUdp: 61221, redirectTcp: 61219, ssRelay: "127.0.0.1:62640" },
@@ -1161,6 +1191,22 @@ case "$REQUEST_METHOD" in
         exit 0
       fi
 
+      if [ -x /opt/sbin/sing-box ]; then
+        SB_CHECK_LOG="/tmp/xkeen-singbox-check-$$.log"
+        if ! /opt/sbin/sing-box check -c "$TMP_BODY" >"$SB_CHECK_LOG" 2>&1; then
+          # sing-box diagnostics can contain JSON snippets (quotes and
+          # backslashes). json_err prints into a JSON string, so flatten and
+          # neutralise those two characters before returning the message.
+          SB_CHECK_ERR="$(tail -n 4 "$SB_CHECK_LOG" 2>/dev/null | tr '\n' ' ' | tr '"\\' "'/" | cut -c1-320)"
+          cp "$TMP_BODY" /tmp/xkeen-singbox-invalid.json 2>/dev/null || true
+          rm -f "$SB_CHECK_LOG"
+          json_err "sing-box config check failed: $SB_CHECK_ERR"
+          rm -f "$TMP_BODY"
+          exit 0
+        fi
+        rm -f "$SB_CHECK_LOG"
+      fi
+
       SINGBOX_PATH="/opt/etc/sing-box/xkeen.json"
       SB_BAK="${SINGBOX_PATH}.bak-ui-$(date +%Y%m%d-%H%M%S)"
       cp "$SINGBOX_PATH" "$SB_BAK" 2>/dev/null || true
@@ -1173,9 +1219,6 @@ case "$REQUEST_METHOD" in
         exit 0
       fi
 
-      # sing-box validates its own config at start; failure leaves the
-      # service down and the next selfheal cycle will notice. We accept the
-      # write either way — UI is the source of truth on this path.
       /opt/etc/init.d/S24antigoblin-singbox restart >/dev/null 2>&1 || true
 
       json_ok "{\"ok\":true,\"singbox\":\"$SINGBOX_PATH\"}"
