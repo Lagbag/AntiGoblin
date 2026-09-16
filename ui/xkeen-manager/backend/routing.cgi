@@ -1526,6 +1526,23 @@ case "$REQUEST_METHOD" in
           EGRESS_STATUS="proxy-unreachable"
           EGRESS_VERIFIED=false
           EGRESS_WARNING="VPN was applied, but a real HTTPS request through 127.0.0.1:61080 failed; check the active server/credentials and xray/sing-box logs"
+
+          # Turn the most common sing-box/HY2 failures into actionable UI
+          # diagnostics. Do not expose credentials; only classify the runtime
+          # error already written by sing-box to tmpfs.
+          SB_RT_LOG="/tmp/antigoblin-singbox-runtime.log"
+          if [ -f "$SB_RT_LOG" ]; then
+            if tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
+              EGRESS_STATUS="hy2-auth-404"
+              EGRESS_WARNING="Hysteria2 server rejected the client (HTTP 404). runtime4 already uses 20/100 Mbps compatibility bandwidth when the URI has no up/down values; if this still happens, refresh/re-import the key because the auth password or endpoint is wrong, or the server auth is misconfigured."
+            elif tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'timeout: no recent network activity|handshake timeout|i/o timeout'; then
+              EGRESS_STATUS="quic-timeout"
+              EGRESS_WARNING="VPN endpoint did not finish the QUIC handshake. Check UDP reachability, server port/port-hopping and obfs settings."
+            elif tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'certificate|x509|tls: failed|CRYPTO_ERROR'; then
+              EGRESS_STATUS="tls-error"
+              EGRESS_WARNING="VPN TLS/QUIC handshake failed. Check SNI, certificate/insecure, ECH and certificate pin settings."
+            fi
+          fi
         elif [ -n "$EGRESS_DIRECT_IP" ] && [ "$EGRESS_PROXY_IP" = "$EGRESS_DIRECT_IP" ]; then
           EGRESS_STATUS="same-as-direct"
           EGRESS_VERIFIED=false

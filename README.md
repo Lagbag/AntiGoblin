@@ -685,3 +685,9 @@ Install-Module Posh-SSH -Scope CurrentUser -Force
 Если проект пригодился — поставь, пожалуйста, ⭐ репозиторию [MaksimSamarin/AntiGoblin](https://github.com/MaksimSamarin/AntiGoblin). Это единственная просьба сверх лицензии: помогает понять, что проект кому-то нужен, и мотивирует развивать его дальше.
 
 Если используешь в коммерческой услуге (продаёшь как часть провайдер-сервиса, ставишь клиентам за деньги, и т.п.) — кратко упомяни origin: «based on AntiGoblin by MaksimSamarin» в любом подходящем месте (about, документация, чек, договор — на твой выбор).
+
+## Hysteria2: `authentication failed, status code: 404`
+
+`runtime4` distinguishes this from a routing/iptables failure. If a Hysteria2 URI does not provide client bandwidth, AntiGoblin now generates conservative `up_mbps: 20` / `down_mbps: 100` instead of leaving both fields empty (sing-box BBR mode). This improves compatibility with servers that reject BBR clients. Explicit provider `up/down` values still take priority.
+
+If HTTP 404 remains after runtime4, refresh the subscription or re-import the original HY2 URI. At that point the tunnel reaches the Hysteria2 server but the server rejects the authentication payload, so check the auth password, endpoint/port and server authentication configuration.

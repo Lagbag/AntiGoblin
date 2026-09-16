@@ -90,6 +90,12 @@ assert.equal(hy2.obfs.type, 'salamander');
 assert.equal(hy2.up_mbps, 20);
 assert.equal(hy2.down_mbps, 100);
 
+const hy2NoBandwidthParsed = api.parseProxyUri('hysteria2://secret@hy2.example:443?sni=hy2.example&obfs=salamander&obfs-password=mask#hy2-default-bandwidth');
+assert.equal(hy2NoBandwidthParsed.ok, true, hy2NoBandwidthParsed.error || 'hy2 no-bandwidth parse failed');
+const hy2NoBandwidth = api.buildSingboxProxyOutbound(api.normalizeProxyConfig(hy2NoBandwidthParsed.config));
+assert.equal(hy2NoBandwidth.up_mbps, 20, 'HY2 compatibility upload default');
+assert.equal(hy2NoBandwidth.down_mbps, 100, 'HY2 compatibility download default');
+
 const hy2HoppingParsed = api.parseProxyUri('hy2://secret@hy2.example:54430/?mport=55000-55100,55200&sni=front.example&insecure=1&ech=QUJDRA%3D%3D#hop');
 assert.equal(hy2HoppingParsed.ok, true, hy2HoppingParsed.error || 'hy2 hopping parse failed');
 assert.deepEqual(Array.from(hy2HoppingParsed.config.serverPorts), ['55000:55100', '55200']);

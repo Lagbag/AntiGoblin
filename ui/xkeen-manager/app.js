@@ -3661,8 +3661,25 @@ function buildSingboxProxyOutbound(config) {
       password: config.password || "",
       tls: buildSingboxTls(config, true)
     };
-    if (Number(config.upMbps) > 0) out.up_mbps = Number(config.upMbps);
-    if (Number(config.downMbps) > 0) out.down_mbps = Number(config.downMbps);
+
+    // HY2 interoperability: an empty up/down pair tells sing-box to use the
+    // BBR congestion controller. Some servers are configured to reject BBR
+    // clients (ignore_client_bandwidth + server bandwidth limits); the wire
+    // symptom is misleadingly the same HTTP 404 that is used for bad auth.
+    // Hiddify-like clients normally provide client bandwidth out of band, so
+    // a bare hysteria2:// URI can work there while failing here. Use a
+    // conservative Brutal/Hysteria CC pair when the share link did not carry
+    // explicit values. Explicit provider values always win.
+    const upMbps = Number(config.upMbps);
+    const downMbps = Number(config.downMbps);
+    if (upMbps > 0 && downMbps > 0) {
+      out.up_mbps = upMbps;
+      out.down_mbps = downMbps;
+    } else {
+      out.up_mbps = 20;
+      out.down_mbps = 100;
+    }
+
     if (Array.isArray(config.serverPorts) && config.serverPorts.length) {
       out.server_ports = config.serverPorts.map(String);
     }
