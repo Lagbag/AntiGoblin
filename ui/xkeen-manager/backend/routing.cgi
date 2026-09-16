@@ -734,7 +734,13 @@ emit_logs() {
 
   case "$SVC" in
     xray)     LOG_FILE="$LOG_PATH" ;;
-    singbox)  LOG_FILE="/opt/var/log/sing-box-xkeen.log" ;;
+    singbox)
+      if [ -f /tmp/antigoblin-singbox-runtime.log ]; then
+        LOG_FILE="/tmp/antigoblin-singbox-runtime.log"
+      else
+        LOG_FILE="/opt/var/log/sing-box-xkeen.log"
+      fi
+      ;;
     selfheal) LOG_FILE="/opt/var/log/xkeen-selfheal.log" ;;
     autoselect) LOG_FILE="/opt/var/log/antigoblin-autoselect.log" ;;
     health)   LOG_FILE="/opt/var/log/xkeen-health.log" ;;

@@ -85,9 +85,33 @@ assert.deepEqual(Array.from(sub.configs, (x) => x.protocol), cases.map(([p]) => 
 
 const hy2 = api.buildSingboxProxyOutbound(api.normalizeProxyConfig(api.parseProxyUri(cases[2][1]).config));
 assert.equal(hy2.tls.certificate_pin_sha256, undefined, 'obsolete TLS pin field must not be emitted');
+assert.equal(hy2.tls.certificate_public_key_sha256, undefined, 'official Hysteria cert pin must not be misused as sing-box SPKI pin');
 assert.equal(hy2.obfs.type, 'salamander');
 assert.equal(hy2.up_mbps, 20);
 assert.equal(hy2.down_mbps, 100);
+
+const hy2HoppingParsed = api.parseProxyUri('hy2://secret@hy2.example:54430/?mport=55000-55100,55200&sni=front.example&insecure=1&ech=QUJDRA%3D%3D#hop');
+assert.equal(hy2HoppingParsed.ok, true, hy2HoppingParsed.error || 'hy2 hopping parse failed');
+assert.deepEqual(Array.from(hy2HoppingParsed.config.serverPorts), ['55000:55100', '55200']);
+assert.equal(hy2HoppingParsed.config.port, 54430);
+const hy2Hopping = api.buildSingboxProxyOutbound(api.normalizeProxyConfig(hy2HoppingParsed.config));
+assert.deepEqual(Array.from(hy2Hopping.server_ports), ['55000:55100', '55200']);
+assert.equal(hy2Hopping.tls.insecure, true);
+assert.deepEqual(Array.from(hy2Hopping.tls.ech.config), ['QUJDRA==']);
+
+const hy2OfficialPorts = api.parseProxyUri('hysteria2://secret@hy2.example:443,5000-6000/?sni=hy2.example#official-hop');
+assert.equal(hy2OfficialPorts.ok, true, hy2OfficialPorts.error || 'official multi-port parse failed');
+assert.equal(hy2OfficialPorts.config.port, 443);
+assert.deepEqual(Array.from(hy2OfficialPorts.config.serverPorts), ['443', '5000:6000']);
+
+const hy2DefaultPort = api.parseProxyUri('hysteria2://secret@hy2.example/?sni=hy2.example#default-port');
+assert.equal(hy2DefaultPort.ok, true, hy2DefaultPort.error || 'default port parse failed');
+assert.equal(hy2DefaultPort.config.port, 443);
+
+const hy2CertPin = api.parseProxyUri('hysteria2://secret@hy2.example:443/?insecure=1&pinSHA256=AA%3ABB%3ACC%3ADD#pin');
+assert.equal(hy2CertPin.ok, true);
+const hy2CertPinOutbound = api.buildSingboxProxyOutbound(api.normalizeProxyConfig(hy2CertPin.config));
+assert.equal(hy2CertPinOutbound.tls.certificate_public_key_sha256, undefined);
 
 const hiddifyJson = JSON.stringify({
   outbounds: [

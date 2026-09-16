@@ -1490,10 +1490,16 @@ function bindTopLevel() {
           : (currentLang === "ru" ? "Xray/sing-box и перехват xkeen работают." : "Xray/sing-box and the xkeen capture hook are running.");
         setApplyDockState(currentLang === "ru" ? "Применено ✓" : "Applied ✓", ipHint, "success", 4500);
         toast.update(T.saveApplyDone, "success");
-        const profile = getActiveProfile();
-        if (profile?.autoSelect?.enabled) {
-          startAutoSelectProbe().catch((error) => pushDebug(`post-apply latency probe failed to start: ${error.message}`));
-        }
+      }
+
+      // Auto-select is most useful when the manually selected/current node is
+      // broken. runtime2 only triggered it after a completely clean apply,
+      // so an HY2 node that failed egress stayed active. The fresh catalog is
+      // already saved here; force a verification run even when apply returned
+      // an egress warning (but not when catalog sync itself failed).
+      const profile = getActiveProfile();
+      if (!catalogWarning && profile?.autoSelect?.enabled) {
+        startAutoSelectProbe().catch((error) => pushDebug(`post-apply latency probe failed to start: ${error.message}`));
       }
 
       els.saveApplyBtn.disabled = false;
@@ -3576,7 +3582,15 @@ function buildSingboxTls(config, forceEnabled = false) {
     insecure: !!config.insecure
   };
   if (Array.isArray(config.alpn) && config.alpn.length) tls.alpn = config.alpn.slice();
-  if (config.pinSHA256) tls.certificate_public_key_sha256 = [config.pinSHA256];
+
+  // Hysteria's URI pinSHA256 is a certificate fingerprint, while sing-box
+  // certificate_public_key_sha256 expects an SPKI/public-key SHA-256. They
+  // are not interchangeable. Raw sing-box/Hiddify JSON is preserved earlier
+  // and can carry the native field. For URI imports we intentionally do not
+  // emit a wrong pin that would make an otherwise valid server fail TLS.
+  if (config.echConfig) {
+    tls.ech = { enabled: true, config: [String(config.echConfig)] };
+  }
 
   // Do not force uTLS when a provider did not request a fingerprint: this
   // keeps the config valid on smaller builds compiled without with_utls.
@@ -3649,6 +3663,10 @@ function buildSingboxProxyOutbound(config) {
     };
     if (Number(config.upMbps) > 0) out.up_mbps = Number(config.upMbps);
     if (Number(config.downMbps) > 0) out.down_mbps = Number(config.downMbps);
+    if (Array.isArray(config.serverPorts) && config.serverPorts.length) {
+      out.server_ports = config.serverPorts.map(String);
+    }
+    if (config.hopInterval) out.hop_interval = String(config.hopInterval);
     if (config.obfs) out.obfs = { type: config.obfs, password: config.obfsPassword || "" };
     return out;
   }
@@ -3777,7 +3795,9 @@ function buildSingboxDocument(profile) {
   const config = getActiveProxyConfig(profile);
 
   const base = {
-    log: { level: "warn", timestamp: true },
+    // Runtime connection diagnostics go to tmpfs, not Entware flash. INFO is
+    // deliberate: HY2/TUIC dial/auth failures often do not surface at WARN.
+    log: { level: "info", output: "/tmp/antigoblin-singbox-runtime.log", timestamp: true },
     inbounds: [
       {
         type: "tproxy",
@@ -3931,10 +3951,13 @@ function createDefaultProxyConfig() {
     privateKeyPassphrase: "",
     extraHeaders: null,
     // Hysteria/Hysteria2-specific
-    obfs: "",             // "salamander" or empty
+    obfs: "",             // "salamander" / "gecko" or empty
     obfsPassword: "",
     insecure: false,      // skip TLS cert verify
-    pinSHA256: ""         // pinned cert fingerprint
+    pinSHA256: "",        // official Hysteria cert fingerprint (not sing-box SPKI)
+    serverPorts: [],      // sing-box server_ports, normalized "start:end" ranges
+    hopInterval: "",      // e.g. "30s"
+    echConfig: ""         // Hysteria2 URI ech= config-list (base64)
   };
 }
 
@@ -4162,6 +4185,39 @@ function parseVmessUri(uri) {
 //                                          &insecure=0|1&pinSHA256=...&alpn=h3#name
 // Hysteria2 is UDP/QUIC, not xray-native — applying it requires sing-box.
 // Hysteria2 is activated through the shared sing-box bridge path.
+function normalizeHysteria2PortList(value) {
+  const out = [];
+  for (const rawPart of String(value || "").split(",")) {
+    const part = rawPart.trim();
+    if (!part) continue;
+    const range = part.match(/^(\d{1,5})\s*[-:]\s*(\d{1,5})$/);
+    if (range) {
+      const a = Number(range[1]);
+      const b = Number(range[2]);
+      if (a >= 1 && a <= 65535 && b >= 1 && b <= 65535 && a <= b) out.push(`${a}:${b}`);
+      continue;
+    }
+    if (/^\d{1,5}$/.test(part)) {
+      const n = Number(part);
+      if (n >= 1 && n <= 65535) out.push(String(n));
+    }
+  }
+  return [...new Set(out)];
+}
+
+function firstPortFromHysteria2Spec(value, fallback = 443) {
+  const ports = normalizeHysteria2PortList(value);
+  if (!ports.length) return fallback;
+  const m = String(ports[0]).match(/^(\d+)/);
+  const n = m ? Number(m[1]) : fallback;
+  return n >= 1 && n <= 65535 ? n : fallback;
+}
+
+// Parse a hysteria2:// or hy2:// URI.
+// Official form:
+//   hysteria2://auth@host[:port[,range...]]/?obfs=...&sni=...&insecure=...
+// Hiddify/Clash ecosystems also commonly use mport=/ports= for port hopping.
+// Keep those extensions because sing-box >=1.11 has native server_ports.
 function parseHysteria2Uri(uri) {
   if (typeof uri !== "string") return { ok: false, error: "not a string" };
   const trimmed = uri.trim();
@@ -4182,54 +4238,69 @@ function parseHysteria2Uri(uri) {
     queryStr = body.slice(queryIdx + 1);
     body = body.slice(0, queryIdx);
   }
+  body = body.replace(/\/+$/, "");
 
-  const atIdx = body.indexOf("@");
+  const atIdx = body.lastIndexOf("@");
   if (atIdx < 0) return { ok: false, error: "missing @ in hysteria2 URI" };
   let password = body.slice(0, atIdx);
   try { password = decodeURIComponent(password); } catch { /* keep raw */ }
-  const hostPort = body.slice(atIdx + 1);
+  let hostPort = body.slice(atIdx + 1).trim();
   if (!password || !hostPort) return { ok: false, error: "empty password or host" };
 
-  const colonIdx = hostPort.lastIndexOf(":");
-  if (colonIdx < 0) return { ok: false, error: "missing port" };
-  const host = hostPort.slice(0, colonIdx).replace(/^\[|\]$/g, "");
-  const port = parseInt(hostPort.slice(colonIdx + 1), 10);
-  if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
-    return { ok: false, error: "invalid host or port" };
+  let host = "";
+  let portSpec = "";
+  if (hostPort.startsWith("[")) {
+    const close = hostPort.indexOf("]");
+    if (close < 0) return { ok: false, error: "invalid IPv6 host" };
+    host = hostPort.slice(1, close);
+    const tail = hostPort.slice(close + 1);
+    if (tail.startsWith(":")) portSpec = tail.slice(1);
+    else if (tail) return { ok: false, error: "invalid IPv6 host/port" };
+  } else {
+    const colonIdx = hostPort.lastIndexOf(":");
+    if (colonIdx >= 0) {
+      host = hostPort.slice(0, colonIdx);
+      portSpec = hostPort.slice(colonIdx + 1);
+    } else {
+      host = hostPort;
+    }
   }
+  host = host.trim();
+  if (!host) return { ok: false, error: "invalid host" };
 
-  const params = {};
-  for (const pair of queryStr.split("&")) {
-    if (!pair) continue;
-    const eqIdx = pair.indexOf("=");
-    const key = eqIdx < 0 ? pair : pair.slice(0, eqIdx);
-    const val = eqIdx < 0 ? "" : pair.slice(eqIdx + 1);
-    try { params[key] = decodeURIComponent(val); }
-    catch { params[key] = val; }
-  }
+  const params = new URLSearchParams(queryStr);
+  const officialPortList = normalizeHysteria2PortList(portSpec);
+  const primaryPort = firstPortFromHysteria2Spec(portSpec, 443);
 
-  const alpn = params.alpn
-    ? params.alpn.split(",").map((s) => s.trim()).filter(Boolean)
-    : [];
+  // Non-standard but widely deployed Hiddify/Clash-style port-hopping keys.
+  // If present, they take precedence over authority-style multi-port.
+  const mportRaw = params.get("mport") || params.get("ports") || "";
+  let serverPorts = normalizeHysteria2PortList(mportRaw);
+  if (!serverPorts.length && officialPortList.length > 1) serverPorts = officialPortList;
+
+  const alpnRaw = params.get("alpn") || "";
+  const alpn = alpnRaw
+    ? alpnRaw.split(",").map((v) => v.trim()).filter(Boolean)
+    : ["h3"];
 
   return {
     ok: true,
     config: {
       protocol: "hysteria2",
-      name: name || `${host}:${port}`,
+      name: name || `${host}:${primaryPort}`,
       address: host,
-      port,
-      uuid: "",                   // hy2 uses password, not uuid
+      port: primaryPort,
+      uuid: "",
       password,
       flow: "",
-      network: "udp",             // QUIC over UDP
-      security: "tls",            // always TLS
-      serverName: params.sni || params.serverName || host,
-      fingerprint: params.fp || "",
+      network: "udp",
+      security: "tls",
+      serverName: params.get("sni") || params.get("serverName") || host,
+      fingerprint: params.get("fp") || "",
       publicKey: "",
       shortId: "",
       spiderX: "/",
-      alpn: alpn.length ? alpn : ["h3"],
+      alpn,
       path: "",
       host: "",
       alterId: 0,
@@ -4237,17 +4308,18 @@ function parseHysteria2Uri(uri) {
       mode: "",
       authority: "",
       xPaddingBytes: "",
-      // Hysteria2-specific
-      obfs: params.obfs || "",
-      obfsPassword: params["obfs-password"] || params.obfsPassword || "",
-      insecure: params.insecure === "1" || params.insecure === "true",
-      pinSHA256: params.pinSHA256 || params["pin-sha256"] || "",
-      upMbps: parseBandwidthMbps(params.upmbps || params.up_mbps || params.up || ""),
-      downMbps: parseBandwidthMbps(params.downmbps || params.down_mbps || params.down || "")
+      obfs: params.get("obfs") || "",
+      obfsPassword: params.get("obfs-password") || params.get("obfsPassword") || "",
+      insecure: ["1", "true", "yes", "on"].includes(String(params.get("insecure") || "").toLowerCase()),
+      pinSHA256: params.get("pinSHA256") || params.get("pin-sha256") || "",
+      echConfig: params.get("ech") || "",
+      serverPorts,
+      hopInterval: params.get("hop_interval") || params.get("hop-interval") || params.get("hopInterval") || "",
+      upMbps: parseBandwidthMbps(params.get("upmbps") || params.get("up_mbps") || params.get("up") || ""),
+      downMbps: parseBandwidthMbps(params.get("downmbps") || params.get("down_mbps") || params.get("down") || "")
     }
   };
 }
-
 
 function safeDecodeURIComponent(value) {
   try { return decodeURIComponent(String(value || "")); }
@@ -4700,6 +4772,9 @@ function singboxOutboundToProxyConfig(outbound) {
     heartbeat: String(outbound.heartbeat || ""),
     upMbps: Number(outbound.up_mbps) || 0,
     downMbps: Number(outbound.down_mbps) || 0,
+    serverPorts: Array.isArray(outbound.server_ports) ? outbound.server_ports.map(String) : [],
+    hopInterval: String(outbound.hop_interval || ""),
+    echConfig: Array.isArray(tls?.ech?.config) ? String(tls.ech.config[0] || "") : "",
     quic: !!outbound.quic,
     privateKey: String(outbound.private_key || ""),
     privateKeyPath: String(outbound.private_key_path || ""),

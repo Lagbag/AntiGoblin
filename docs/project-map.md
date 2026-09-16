@@ -110,7 +110,8 @@ UI и state:
 - `/opt/var/log/xkeen-selfheal.log`
 - `/opt/var/log/xkeen-health.log`
 - `/opt/var/log/xray/access.log` и `error.log`
-- `/opt/var/log/sing-box-xkeen.log` (если включен debug)
+- `/tmp/antigoblin-singbox-runtime.log` (INFO runtime на tmpfs, runtime3+)
+- `/opt/var/log/sing-box-xkeen.log` (startup/check fallback)
 - `/opt/var/log/xkeen-manager-uhttpd.log`
 - `/opt/var/log/antigoblin-firstboot.log` (только на USB-installer пути, при первом boot после разворачивания Entware)
 

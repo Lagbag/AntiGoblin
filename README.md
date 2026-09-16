@@ -36,6 +36,18 @@ cd /путь/к/AntiGoblin-main
 
 Чтобы намеренно обновиться именно из GitHub, можно использовать обычную `curl .../update.sh | sh` команду выше или запустить локальный скрипт с `ANTIGOBLIN_UPDATE_REMOTE=1`.
 
+
+### Что исправлено в runtime3
+
+- Автовыбор больше не доверяет одному ICMP/TCP RTT: **текущий активный сервер тоже проходит реальный HTTPS health-check каждый цикл**. Если HY2/TUIC отвечает на ping, но сам туннель мёртв, watchdog пропускает его и пробует следующий сервер по задержке.
+- После Apply авто-выбор запускается даже если текущий сервер дал egress-warning, поэтому сломанный узел не остаётся активным только потому, что у него минимальный ping.
+- Hysteria2 URI понимает официальный multi-port вид `host:443,5000-6000` и распространённые Hiddify/Clash параметры `mport=` / `ports=`; они генерируются в sing-box как `server_ports` + `hop_interval`.
+- Добавлен перенос `ech=` для HY2.
+- Исправлена ошибка с `pinSHA256`: официальный Hysteria `pinSHA256` — fingerprint сертификата, а sing-box `certificate_public_key_sha256` — hash публичного ключа (SPKI); runtime больше не подставляет одно вместо другого. Для строгого pinning лучше импортировать готовый raw Hiddify/sing-box JSON, где нативное поле уже задано корректно.
+- sing-box runtime INFO-лог теперь пишется в RAM (`/tmp/antigoblin-singbox-runtime.log`), чтобы при HY2/TUIC ошибке была видна причина, но не убивалась флешка постоянной записью.
+
+> Если Hysteria2 был импортирован **до runtime3** из URI/подписки с `mport`, после обновления нажми ↻ у подписки (или заново вставь ручной HY2 URI), затем `Сохранить и применить`: старый state уже не содержит потерянный `mport`, его невозможно восстановить без исходной ссылки.
+
 После установки рабочий сценарий пользователя:
 
 1. Открыть UI на `http://<router-ip>:8899/`.
@@ -65,7 +77,7 @@ cd /путь/к/AntiGoblin-main
 
 Автовыбор включён по умолчанию. Раз в **5 минут** AntiGoblin проверяет все серверы активного профиля параллельно и сортирует их по измеренной задержке. Для TCP-протоколов измеряется время TCP connect к реальному порту сервера; для QUIC/UDP-протоколов (`Hysteria/Hysteria2`, `TUIC`, `WireGuard`) используется ICMP RTT, потому что универсального безопасного handshake для всех этих протоколов нет.
 
-После измерения AntiGoblin пытается включить самый быстрый сервер и дополнительно делает **реальный HTTPS-запрос через локальный SOCKS5 → активный туннель**. Если самый быстрый endpoint отвечает на ping, но сам VPN на нём не работает/не принимает ключ, watchdog откатывает конфиг и пробует следующий сервер по RTT. По умолчанию порог переключения — `0 ms`, то есть выбирается минимальная актуальная задержка; в UI можно выставить положительный порог, если хочется меньше переключений из-за джиттера.
+После измерения AntiGoblin пытается включить самый быстрый сервер и дополнительно делает **реальный HTTPS-запрос через локальный SOCKS5 → активный туннель**. Тот же HTTPS health-check теперь выполняется и для уже активного сервера каждый цикл. Если endpoint отвечает на ping, но сам VPN на нём не работает/не принимает ключ, watchdog пропускает/откатывает его и пробует следующий сервер по RTT. По умолчанию порог переключения — `0 ms`, то есть выбирается минимальная актуальная задержка; в UI можно выставить положительный порог, если хочется меньше переключений из-за джиттера.
 
 После каждого `Сохранить и применить` полный latency-check запускается сразу, не нужно ждать следующего пятиминутного цикла. Результаты видны рядом с каждым сервером и в логе `auto-select`.
 
@@ -105,6 +117,8 @@ ndmc -c 'show running-config' | sed -n '/^ip policy /,/^!/p'
 
 # Логи
 tail -n 100 /opt/var/log/xray-manual.log
+tail -n 100 /tmp/antigoblin-singbox-runtime.log
+# startup/check fallback (если runtime log ещё не создан)
 tail -n 100 /opt/var/log/sing-box-xkeen.log
 tail -n 100 /opt/var/log/xkeen-selfheal.log
 ```
@@ -119,7 +133,7 @@ tail -n 100 /opt/var/log/xkeen-selfheal.log
 |----------|-----------|--------------|-------------------|
 | **VLESS** | `tcp`, `ws`, `grpc`, `xhttp` | `reality`, `tls`, `none` | xray для URI; raw sing-box JSON остаётся на sing-box |
 | **VMess** | `tcp`, `ws`, `grpc` | `tls`, `reality`, `none` | xray для URI; raw sing-box JSON остаётся на sing-box |
-| **Hysteria2 / HY2** | `quic` | `tls`, Salamander obfs, cert pin | sing-box |
+| **Hysteria2 / HY2** | `quic`, port hopping | `tls`, Salamander/Gecko obfs, ECH; raw JSON сохраняет native pin | sing-box |
 | **Hysteria v1** | `quic` | `tls`, obfs, up/down Mbps | sing-box |
 | **Trojan** | `tcp`, `ws`, `grpc`, `httpupgrade`, `http/h2` | `tls` | sing-box |
 | **Shadowsocks** | TCP/UDP | SIP002 / legacy `ss://`, plugin/options | sing-box |

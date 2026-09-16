@@ -175,7 +175,8 @@ tail -f /opt/var/log/xray/access.log
 | `/opt/var/log/xkeen-health.log` | Health-snapshots `xray` каждые 5 мин: `fd`, `conntrack`, mem, состояния сокетов к VPN-серверу. |
 | `/opt/var/log/xray/access.log` | Подробный access лог `xray` (только когда `loglevel: info`). |
 | `/opt/var/log/xray/error.log` | Ошибки `xray` (рестарт, отвал TLS, проблемы с outbound). |
-| `/opt/var/log/sing-box-xkeen.log` | sing-box, если включен debug в `/opt/etc/sing-box/xkeen.json`. |
+| `/tmp/antigoblin-singbox-runtime.log` | sing-box runtime INFO (RAM/tmpfs; HY2/TUIC dial/auth/TLS причины). |
+| `/opt/var/log/sing-box-xkeen.log` | startup/check fallback sing-box. |
 | `/opt/var/log/xkeen-manager-uhttpd.log` | UI-сервер `uhttpd_kn` на :8899. |
 
 То же самое доступно прямо в UI в блоке «Здоровье и логи» — селектор и кнопка «Загрузить».

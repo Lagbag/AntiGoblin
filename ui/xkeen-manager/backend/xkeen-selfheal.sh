@@ -434,6 +434,8 @@ maybe_rotate_logs() {
   rotate_log_if_large "/opt/var/log/xray/error.log"      20971520
   rotate_log_if_large "/opt/var/log/xray-manual.log"     20971520
   rotate_log_if_large "/opt/var/log/sing-box-xkeen.log"   5242880
+  # sing-box INFO runtime log lives on tmpfs to avoid periodic flash writes.
+  rotate_log_if_large "/tmp/antigoblin-singbox-runtime.log" 1048576
   rotate_log_if_large "/opt/var/log/xkeen-selfheal.log"   5242880
   rotate_log_if_large "/opt/var/log/xkeen-health.log"    10485760
   rotate_log_if_large "/opt/var/log/xkeen-sysctl.log"     1048576

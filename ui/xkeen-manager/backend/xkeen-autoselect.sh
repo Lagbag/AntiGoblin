@@ -205,12 +205,15 @@ restart_xray_bounded() {
 }
 
 verify_tunnel_egress() {
-  # Optional but valuable: config validation only proves syntax/listeners, not
-  # that the selected remote server accepts our credentials. Verify one real
-  # HTTPS request through Xray's SOCKS inbound before committing the switch.
+  # Syntax/listener checks are not health checks. A QUIC endpoint can answer
+  # ICMP while rejecting Hysteria/TUIC credentials. First try a neutral HTTPS
+  # page, then public-IP endpoints as fallbacks.
   [ -x /opt/bin/curl ] || return 0
+  /opt/bin/curl -4 -fsS -o /dev/null \
+    --socks5-hostname 127.0.0.1:61080 \
+    --connect-timeout 4 --max-time 8 https://example.com >/dev/null 2>&1 && return 0
   for url in https://api.ipify.org https://ifconfig.me/ip; do
-    out="$(/opt/bin/curl -fsS --socks5-hostname 127.0.0.1:61080 --connect-timeout 4 --max-time 8 "$url" 2>/dev/null | tr -d '\r\n ' | head -c 80)"
+    out="$(/opt/bin/curl -4 -fsS --socks5-hostname 127.0.0.1:61080 --connect-timeout 4 --max-time 8 "$url" 2>/dev/null | tr -d '\r\n ' | head -c 80)"
     case "$out" in
       ''|*[!0-9a-fA-F:.]*) ;;
       *) return 0 ;;
@@ -362,10 +365,25 @@ run_once_inner() {
     return 1
   fi
 
+  # runtime2 ranked UDP protocols by ICMP but did not re-validate the already
+  # active node when it remained the lowest RTT. That lets a dead HY2/TUIC
+  # endpoint stay selected forever. Verify the current tunnel every cycle.
+  current_tunnel_ok=1
+  if [ -n "$current_id" ]; then
+    if verify_tunnel_egress; then
+      current_tunnel_ok=1
+    else
+      current_tunnel_ok=0
+      log "current tunnel failed egress validation id=$current_id latency=${current_ms:-unknown}ms"
+    fi
+  fi
+
   switch=0
   reason="best server already active"
   if [ -z "$current_id" ] || [ -z "$current_ms" ]; then
     switch=1; reason="current server unreachable"
+  elif [ "$current_tunnel_ok" != "1" ]; then
+    switch=1; reason="current tunnel failed HTTPS validation"
   elif [ "$best_id" != "$current_id" ]; then
     threshold="$(min_improvement_ms)"
     improvement=$((current_ms - best_ms))
@@ -397,18 +415,24 @@ run_once_inner() {
       # faster candidates failed real tunnel validation, keeping it is the
       # correct result; do not restart it pointlessly.
       if [ "$candidate_id" = "$current_id" ] && [ -n "$current_ms" ]; then
-        if [ "$tried" -gt 0 ]; then
-          selected_id="$current_id"
-          selected_ms="$current_ms"
-          reason="faster endpoint(s) failed tunnel validation; kept current"
+        if [ "$current_tunnel_ok" = "1" ]; then
+          if [ "$tried" -gt 0 ]; then
+            selected_id="$current_id"
+            selected_ms="$current_ms"
+            reason="faster endpoint(s) failed tunnel validation; kept current"
+          fi
+          break
         fi
-        break
+        # Current can be first by ping while its actual HY2/TUIC tunnel is
+        # dead. Re-applying identical credentials is pointless; try next.
+        log "skip current candidate id=$candidate_id: egress validation failed"
+        continue
       fi
 
       # Honour a user-configured hysteresis. Default is 0 ms, i.e. strict
       # lowest measured latency as requested; a positive value can be used to
       # reduce flapping on noisy links.
-      if [ -n "$current_ms" ]; then
+      if [ -n "$current_ms" ] && [ "$current_tunnel_ok" = "1" ]; then
         threshold="$(min_improvement_ms)"
         improvement=$((current_ms - candidate_ms))
         [ "$improvement" -lt "$threshold" ] && break
