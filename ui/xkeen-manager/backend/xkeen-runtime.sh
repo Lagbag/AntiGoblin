@@ -646,6 +646,22 @@ xkeen_ensure_tproxy_module() {
   iptables -t mangle -X xkeen_tproxy_probe 2>/dev/null || true
 }
 
+# Always exempt destinations that are directly connected to the router before
+# catch-all UDP TPROXY. The DNS-populated bypass ipset is rebuilt in the
+# background, so relying on it alone creates a short window where DNS/NTP/LAN
+# UDP can be swallowed by TPROXY immediately after Save & Apply.
+xkeen_append_udp_local_returns() {
+  iptables -t mangle -A xkeen_udp_route -d 224.0.0.0/4 -j RETURN 2>/dev/null || true
+  iptables -t mangle -A xkeen_udp_route -d 255.255.255.255/32 -j RETURN 2>/dev/null || true
+
+  ip route show | /opt/bin/awk '
+    $1 ~ /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/ && $2 == "dev" { print $1 }
+  ' | sort -u | while IFS= read -r subnet; do
+    [ -n "$subnet" ] || continue
+    iptables -t mangle -A xkeen_udp_route -d "$subnet" -j RETURN 2>/dev/null || true
+  done
+}
+
 xkeen_apply_udp_route() {
   if ! xkeen_udp_config_enabled; then
     xkeen_cleanup_udp_route
@@ -671,6 +687,7 @@ xkeen_apply_udp_route() {
   xkeen_ensure_tproxy_module || return 1
   iptables -t mangle -N xkeen_udp_route 2>/dev/null || true
   iptables -t mangle -F xkeen_udp_route 2>/dev/null || true
+  xkeen_append_udp_local_returns
   # Bypass UDP for hosts in the bypass ipset before TPROXY. Mirrors the TCP
   # bypass-RETURN that lives in the nat `xkeen` chain. Without this, a host
   # added to bypass via UI only escapes REDIRECT (TCP); its UDP still goes
@@ -687,14 +704,25 @@ xkeen_apply_udp_route() {
       || ip rule del fwmark "$XKEEN_UDP_MARK" lookup "$XKEEN_UDP_TABLE" 2>/dev/null \
       || break
   done
-  ip rule add fwmark "$XKEEN_UDP_MARK/$XKEEN_UDP_MARK" table "$XKEEN_UDP_TABLE" 2>/dev/null || true
-  ip route replace local 0.0.0.0/0 dev lo table "$XKEEN_UDP_TABLE" 2>/dev/null || true
+  if ! ip rule add fwmark "$XKEEN_UDP_MARK/$XKEEN_UDP_MARK" table "$XKEEN_UDP_TABLE" 2>/dev/null; then
+    xkeen_runtime_log "ip_rule_fail: fwmark=$XKEEN_UDP_MARK table=$XKEEN_UDP_TABLE"
+    return 1
+  fi
+  if ! ip route replace local 0.0.0.0/0 dev lo table "$XKEEN_UDP_TABLE" 2>/dev/null; then
+    xkeen_runtime_log "ip_route_fail: table=$XKEEN_UDP_TABLE local=0.0.0.0/0"
+    return 1
+  fi
 
   xkeen_delete_jumps mangle PREROUTING xkeen_udp_route
   if ! iptables -t mangle -A PREROUTING -m connmark --mark "0x$XKEEN_MARK" -m conntrack ! --ctstate INVALID -p udp -m set --match-set "$XKEEN_UDP_ROUTE_SET" dst -j xkeen_udp_route 2>/dev/null; then
     xkeen_runtime_log "iptables_fail: mangle PREROUTING -> xkeen_udp_route (mark=0x$XKEEN_MARK)"
     return 1
   fi
+
+  # Do not report success unless the two policy-routing pieces are visible.
+  ip rule show 2>/dev/null | grep -qE "fwmark $XKEEN_UDP_MARK(/$XKEEN_UDP_MARK)? (lookup|table) $XKEEN_UDP_TABLE" || return 1
+  ip route show table "$XKEEN_UDP_TABLE" 2>/dev/null | grep -qE '^local (default|0\.0\.0\.0/0).* dev lo' || return 1
+  return 0
 }
 
 xkeen_append_local_returns() {
@@ -794,33 +822,45 @@ xkeen_ensure_socks_inbound_ip() {
   return 0
 }
 
+# Fast, DNS-free part of the runtime repair. Save & Apply calls this
+# synchronously after xray is restarted so a valid routing.json can never be
+# reported as applied while the TCP PREROUTING hook is missing. The expensive
+# domain/ipset refresh remains in xkeen_repair_hooks/self-heal.
+xkeen_ensure_tcp_capture_hook() {
+  xkeen_ensure_mark || return 1
+  mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+
+  # The capture chain references the bypass set. Ensure the set exists even
+  # before the slower DNS-based rebuild has populated it.
+  ipset create "$XKEEN_BYPASS_SET" hash:net family inet -exist 2>/dev/null || return 1
+
+  iptables -t nat -N xkeen 2>/dev/null || true
+  iptables -t nat -F xkeen 2>/dev/null || return 1
+  xkeen_append_local_returns
+  iptables -t nat -A xkeen -p tcp -m set --match-set "$XKEEN_BYPASS_SET" dst -j RETURN 2>/dev/null || true
+  iptables -t nat -A xkeen -p tcp -j REDIRECT --to-ports "$XKEEN_REDIRECT_PORT" 2>/dev/null || return 1
+  iptables -t nat -A xkeen -j RETURN 2>/dev/null || true
+
+  # Recreate the jump instead of merely checking it: this also fixes a stale
+  # mark after the Keenetic xkeen policy was deleted/recreated.
+  xkeen_delete_jumps nat PREROUTING xkeen
+  if ! iptables -t nat -I PREROUTING 1 -m connmark --mark "0x$XKEEN_MARK" -m conntrack ! --ctstate INVALID -j xkeen 2>/dev/null; then
+    xkeen_runtime_log "iptables_fail: nat PREROUTING -> xkeen (mark=0x$XKEEN_MARK)"
+    return 1
+  fi
+
+  xkeen_block_ipv6_forward
+  return 0
+}
+
 xkeen_repair_hooks() {
   xkeen_ensure_mark || return 1
   mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
   xkeen_ensure_socks_inbound_ip
 
   xkeen_build_bypass_ipset || return 1
+  xkeen_ensure_tcp_capture_hook || return 1
 
-  iptables -t nat -N xkeen 2>/dev/null || true
-  iptables -t nat -F xkeen 2>/dev/null || true
-  xkeen_append_local_returns
-  iptables -t nat -A xkeen -p tcp -m set --match-set "$XKEEN_BYPASS_SET" dst -j RETURN 2>/dev/null || true
-  iptables -t nat -A xkeen -p tcp -j REDIRECT --to-ports "$XKEEN_REDIRECT_PORT" 2>/dev/null || true
-  # REDIRECT is terminating, so nothing after it in this chain is reachable.
-  # We keep the trailing RETURN as a defensive marker: if someone later
-  # inserts a non-terminating rule between REDIRECT and here, packets not
-  # matched by REDIRECT (e.g. UDP if the -p tcp guard is edited) will
-  # explicitly leave the chain instead of falling through implicitly.
-  iptables -t nat -A xkeen -j RETURN 2>/dev/null || true
-
-  xkeen_delete_jumps nat PREROUTING xkeen
-  if ! iptables -t nat -C PREROUTING -m connmark --mark "0x$XKEEN_MARK" -m conntrack ! --ctstate INVALID -j xkeen 2>/dev/null; then
-    if ! iptables -t nat -I PREROUTING 1 -m connmark --mark "0x$XKEEN_MARK" -m conntrack ! --ctstate INVALID -j xkeen 2>/dev/null; then
-      xkeen_runtime_log "iptables_fail: nat PREROUTING -> xkeen (mark=0x$XKEEN_MARK)"
-    fi
-  fi
-
-  xkeen_block_ipv6_forward
   xkeen_cleanup_retired_udp
   xkeen_apply_udp_route
 }

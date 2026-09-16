@@ -10,6 +10,7 @@ REPO_OWNER="${ANTIGOBLIN_REPO_OWNER:-Lagbag}"
 REPO_NAME="${ANTIGOBLIN_REPO_NAME:-AntiGoblin}"
 REPO_BRANCH="${ANTIGOBLIN_REPO_BRANCH:-main}"
 INSTALL_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}/install.sh"
+SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)"
 
 case "${1:-}" in
   --help|-h)
@@ -26,6 +27,16 @@ esac
 TMP="/opt/tmp/antigoblin-update-install.sh"
 
 [ -d /opt ] || { echo "ERROR: /opt is not mounted; Entware is required." >&2; exit 1; }
+
+# When update.sh is executed from an extracted release/ZIP, prefer the
+# installer next to it. This makes a local upgrade deterministic and avoids
+# accidentally downloading an older GitHub main before the user has pushed
+# the new release to the fork. Piped `curl .../update.sh | sh` has no sibling
+# install.sh, so it naturally falls through to the remote path below.
+if [ "${ANTIGOBLIN_UPDATE_REMOTE:-0}" != "1" ]    && [ -n "$SELF_DIR" ]    && [ -f "$SELF_DIR/install.sh" ]    && [ "$SELF_DIR/install.sh" != "$0" ]; then
+  echo "==> Using local installer: $SELF_DIR/install.sh"
+  exec /opt/bin/sh "$SELF_DIR/install.sh" --update "$@"
+fi
 mkdir -p /opt/tmp
 
 if [ -x /opt/bin/curl ]; then

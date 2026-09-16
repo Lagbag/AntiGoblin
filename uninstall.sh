@@ -33,6 +33,7 @@ backup_state() {
   dst="/opt/var/backups/antigoblin/uninstall-$stamp"
   mkdir -p "$dst/xray" "$dst/sing-box"
   [ -f /opt/share/xkeen-manager/xkeen-ui-state.json ] && cp /opt/share/xkeen-manager/xkeen-ui-state.json "$dst/xkeen-ui-state.json" || true
+  [ -f /opt/share/xkeen-manager/autoselect-catalog.json ] && cp /opt/share/xkeen-manager/autoselect-catalog.json "$dst/autoselect-catalog.json" || true
   [ -f /opt/etc/antigoblin.conf ] && cp /opt/etc/antigoblin.conf "$dst/antigoblin.conf" || true
   [ -f /opt/share/xkeen-manager/VERSION ] && cp /opt/share/xkeen-manager/VERSION "$dst/VERSION" || true
   for f in /opt/etc/xray/configs/*.json; do [ -f "$f" ] && cp "$f" "$dst/xray/$(basename "$f")" || true; done
@@ -49,10 +50,11 @@ BACKUP_DIR="$(backup_state)"
 echo "==> Backup: $BACKUP_DIR"
 
 echo "==> Stopping AntiGoblin services"
-for svc in /opt/etc/init.d/S26antigoblin /opt/etc/init.d/S25antigoblin-selfheal /opt/etc/init.d/S24antigoblin-singbox; do
+for svc in /opt/etc/init.d/S26antigoblin /opt/etc/init.d/S25antigoblin-autoselect /opt/etc/init.d/S25antigoblin-selfheal /opt/etc/init.d/S24antigoblin-singbox; do
   [ -x "$svc" ] && "$svc" stop >/dev/null 2>&1 || true
 done
 pkill -f 'xkeen-selfheal-loop.sh' 2>/dev/null || true
+pkill -f 'xkeen-autoselect.sh --loop' 2>/dev/null || true
 
 # Resolve the Keenetic policy mark used by AntiGoblin, if available.
 MARK_HEX="$(cat /tmp/xkeen-mark 2>/dev/null || true)"
@@ -102,6 +104,7 @@ echo "==> Removing init scripts, hooks, cron and UI"
 rm -f /opt/etc/init.d/S20antigoblin-sysctl \
       /opt/etc/init.d/S24antigoblin-singbox \
       /opt/etc/init.d/S25antigoblin-selfheal \
+      /opt/etc/init.d/S25antigoblin-autoselect \
       /opt/etc/init.d/S26antigoblin
 rm -f /opt/etc/cron.1min/50-antigoblin-selfheal
 rm -f /opt/etc/ndm/usb.d/50-antigoblin.sh \
@@ -109,8 +112,10 @@ rm -f /opt/etc/ndm/usb.d/50-antigoblin.sh \
       /opt/etc/ndm/fs.d/50-antigoblin.sh
 rm -f /opt/etc/antigoblin.conf /opt/etc/antigoblin.done
 rm -rf /opt/share/xkeen-manager
-rm -f /opt/var/run/antigoblin-selfheal-loop.pid /tmp/xkeen-mark /tmp/xkeen-needs-xray-restart
-rm -f /opt/var/log/xkeen-*.log /opt/var/log/sing-box-xkeen.log /opt/var/log/xkeen-manager-uhttpd.log
+rm -f /opt/var/run/antigoblin-selfheal-loop.pid /opt/var/run/antigoblin-autoselect.pid \
+      /tmp/antigoblin-autoselect-status.json /tmp/antigoblin-autoselect-last-switch.ts \
+      /tmp/xkeen-mark /tmp/xkeen-needs-xray-restart
+rm -f /opt/var/log/xkeen-*.log /opt/var/log/antigoblin-autoselect.log /opt/var/log/sing-box-xkeen.log /opt/var/log/xkeen-manager-uhttpd.log
 
 if [ "$PURGE" = "1" ]; then
   echo "==> Purging AntiGoblin VPN configs"

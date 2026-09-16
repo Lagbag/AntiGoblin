@@ -4,7 +4,11 @@ PATH="/opt/bin:/opt/sbin:/sbin:/usr/sbin:/bin:/usr/bin:$PATH"
 
 ROUTING_PATH="/opt/etc/xray/configs/05_routing.json"
 OUTBOUNDS_PATH="/opt/etc/xray/configs/04_outbounds.json"
+SINGBOX_PATH="/opt/etc/sing-box/xkeen.json"
 STATE_PATH="/opt/share/xkeen-manager/xkeen-ui-state.json"
+AUTOSELECT_CATALOG_PATH="/opt/share/xkeen-manager/autoselect-catalog.json"
+AUTOSELECT_STATUS_PATH="/tmp/antigoblin-autoselect-status.json"
+AUTOSELECT_SCRIPT="/opt/share/xkeen-manager/api/xkeen-autoselect.sh"
 # Per-PID scratch paths. Two concurrent CGI processes MUST NOT share
 # these — read_body writes to TMP_BODY BEFORE acquire_apply_lock, so if
 # both used a fixed path client B would overwrite client A's body, and
@@ -66,7 +70,7 @@ read_body() {
   # so an authenticated attacker sending CONTENT_LENGTH=500MB would fill
   # /tmp (tmpfs) and OOM the router. Reject early on the declared header,
   # and use `head -c` as a belt-and-suspenders limit if the header lied.
-  MAX_BODY=524288
+  MAX_BODY=3145728
   DECLARED="${CONTENT_LENGTH:-0}"
   case "$DECLARED" in ''|*[!0-9]*) DECLARED=0 ;; esac
   if [ "$DECLARED" -gt "$MAX_BODY" ]; then
@@ -131,7 +135,9 @@ router_auth_endpoint() {
 # gets a clean 503 instead of a 502 Bad Gateway from uhttpd cutting the
 # CGI process mid-flight.
 acquire_apply_lock() {
-  deadline=$(( $(date +%s) + 60 ))
+  wait_sec="${1:-60}"
+  case "$wait_sec" in ''|*[!0-9]*) wait_sec=60 ;; esac
+  deadline=$(( $(date +%s) + wait_sec ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if xkeen_lock_acquire; then
       trap 'xkeen_lock_release' EXIT INT TERM
@@ -143,7 +149,8 @@ acquire_apply_lock() {
 }
 
 require_apply_lock() {
-  if ! acquire_apply_lock; then
+  wait_sec="${1:-60}"
+  if ! acquire_apply_lock "$wait_sec"; then
     printf 'Status: 503 Service Unavailable\r\n'
     printf 'Content-Type: application/json; charset=utf-8\r\n'
     printf 'Cache-Control: no-store\r\n'
@@ -152,6 +159,13 @@ require_apply_lock() {
     rm -f "$TMP_BODY" 2>/dev/null || true
     exit 0
   fi
+}
+
+release_apply_lock_now() {
+  if type xkeen_lock_release >/dev/null 2>&1; then
+    xkeen_lock_release 2>/dev/null || true
+  fi
+  trap - EXIT INT TERM
 }
 
 restart_xray() {
@@ -203,8 +217,126 @@ restart_xray() {
   return 1
 }
 
+restart_singbox() {
+  # Do not call rc.func `restart` synchronously from CGI. On some builds it
+  # can wait indefinitely for an old QUIC session/process, leaving the apply
+  # lock held even after the browser aborts. Bound stop/start ourselves.
+  OLD_SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
+  killall sing-box 2>/dev/null || true
+  i=0
+  while [ $i -lt 6 ] && [ -n "$OLD_SB_PID" ] && kill -0 "$OLD_SB_PID" 2>/dev/null; do
+    sleep 1
+    i=$((i + 1))
+  done
+  if [ -n "$OLD_SB_PID" ] && kill -0 "$OLD_SB_PID" 2>/dev/null; then
+    CMDLINE="$(tr '\0' ' ' < "/proc/$OLD_SB_PID/cmdline" 2>/dev/null || true)"
+    case "$CMDLINE" in *sing-box*) kill -9 "$OLD_SB_PID" 2>/dev/null || true ;; esac
+  fi
+  rm -f /opt/var/run/sing-box.pid 2>/dev/null || true
+  [ -x /opt/sbin/sing-box ] || return 1
+  [ -f /opt/etc/sing-box/xkeen.json ] || return 1
+  /opt/sbin/start-stop-daemon -S -b -m -p /opt/var/run/sing-box.pid -x /opt/sbin/sing-box -- run -c /opt/etc/sing-box/xkeen.json >>/opt/var/log/sing-box-xkeen.log 2>&1 || return 1
+
+  i=0
+  while [ $i -lt 10 ]; do
+    if pidof sing-box >/dev/null 2>&1 && netstat -lnpu 2>/dev/null | grep -q ':61221 '; then
+      # sing-box-backed TCP protocols additionally require the xray relay.
+      if /opt/bin/jq -e '.inbounds[]? | select(.listen_port == 61225)' /opt/etc/sing-box/xkeen.json >/dev/null 2>&1; then
+        netstat -lnpt 2>/dev/null | grep -q ':61225 ' || { sleep 1; i=$((i + 1)); continue; }
+      fi
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+validate_singbox_file() {
+  SB_FILE="$1"
+  SB_LOG="${2:-/tmp/xkeen-singbox-check-$$.log}"
+  /opt/sbin/sing-box check -c "$SB_FILE" >"$SB_LOG" 2>&1 &
+  SB_CHECK_PID=$!
+  i=0
+  while [ $i -lt 12 ] && kill -0 "$SB_CHECK_PID" 2>/dev/null; do
+    sleep 1
+    i=$((i + 1))
+  done
+  if kill -0 "$SB_CHECK_PID" 2>/dev/null; then
+    kill "$SB_CHECK_PID" 2>/dev/null || true
+    sleep 1
+    kill -9 "$SB_CHECK_PID" 2>/dev/null || true
+    wait "$SB_CHECK_PID" 2>/dev/null || true
+    printf '%s\n' 'sing-box check timed out after 12s' >>"$SB_LOG"
+    return 124
+  fi
+  wait "$SB_CHECK_PID"
+}
+
 validate_confdir() {
-  /opt/sbin/xray run -test -confdir /opt/etc/xray/configs >/dev/null 2>&1
+  # xray -test should normally finish in <1s, but a damaged filesystem or
+  # plugin/asset lookup must not hold the CGI/apply lock forever.
+  CHECK_LOG="/tmp/xkeen-xray-check-$$.log"
+  /opt/sbin/xray run -test -confdir /opt/etc/xray/configs >"$CHECK_LOG" 2>&1 &
+  CHECK_PID=$!
+  i=0
+  while [ $i -lt 12 ] && kill -0 "$CHECK_PID" 2>/dev/null; do
+    sleep 1
+    i=$((i + 1))
+  done
+  if kill -0 "$CHECK_PID" 2>/dev/null; then
+    kill "$CHECK_PID" 2>/dev/null || true
+    sleep 1
+    kill -9 "$CHECK_PID" 2>/dev/null || true
+    wait "$CHECK_PID" 2>/dev/null || true
+    rm -f "$CHECK_LOG"
+    return 124
+  fi
+  wait "$CHECK_PID"
+  RC=$?
+  rm -f "$CHECK_LOG"
+  return "$RC"
+}
+
+validate_xray_candidate() {
+  OUT_FILE="$1"
+  ROUTE_FILE="$2"
+  CAND_DIR="/tmp/xkeen-xray-candidate-$$"
+  CHECK_LOG="/tmp/xkeen-xray-candidate-check-$$.log"
+  rm -rf "$CAND_DIR" 2>/dev/null || true
+  mkdir -p "$CAND_DIR" || return 1
+
+  for CFG in /opt/etc/xray/configs/*.json; do
+    [ -f "$CFG" ] || continue
+    BASE="${CFG##*/}"
+    case "$BASE" in
+      04_outbounds.json|05_routing.json) continue ;;
+    esac
+    cp "$CFG" "$CAND_DIR/$BASE" || { rm -rf "$CAND_DIR"; return 1; }
+  done
+  cp "$OUT_FILE" "$CAND_DIR/04_outbounds.json" || { rm -rf "$CAND_DIR"; return 1; }
+  cp "$ROUTE_FILE" "$CAND_DIR/05_routing.json" || { rm -rf "$CAND_DIR"; return 1; }
+
+  /opt/sbin/xray run -test -confdir "$CAND_DIR" >"$CHECK_LOG" 2>&1 &
+  CHECK_PID=$!
+  i=0
+  while [ $i -lt 12 ] && kill -0 "$CHECK_PID" 2>/dev/null; do
+    sleep 1
+    i=$((i + 1))
+  done
+  if kill -0 "$CHECK_PID" 2>/dev/null; then
+    kill "$CHECK_PID" 2>/dev/null || true
+    sleep 1
+    kill -9 "$CHECK_PID" 2>/dev/null || true
+    wait "$CHECK_PID" 2>/dev/null || true
+    printf '%s\n' 'xray candidate check timed out after 12s' >>"$CHECK_LOG"
+    rm -rf "$CAND_DIR"
+    return 124
+  fi
+  wait "$CHECK_PID"
+  RC=$?
+  rm -rf "$CAND_DIR"
+  return "$RC"
 }
 
 get_xray_pid() {
@@ -283,6 +415,18 @@ get_kind() {
     kind=singbox|*'&kind=singbox'|kind=singbox'&'*)
       printf 'singbox'
       ;;
+    kind=autoselect-catalog|*'&kind=autoselect-catalog'|kind=autoselect-catalog'&'*)
+      printf 'autoselect-catalog'
+      ;;
+    kind=autoselect-status|*'&kind=autoselect-status'|kind=autoselect-status'&'*)
+      printf 'autoselect-status'
+      ;;
+    kind=autoselect-run|*'&kind=autoselect-run'|kind=autoselect-run'&'*)
+      printf 'autoselect-run'
+      ;;
+    kind=apply-runtime|*'&kind=apply-runtime'|kind=apply-runtime'&'*)
+      printf 'apply-runtime'
+      ;;
     *)
       printf 'routing'
       ;;
@@ -345,8 +489,12 @@ emit_health() {
   XRAY_PID="$(get_xray_pid)"
   SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
   SELFHEAL_PID="$(cat /opt/var/run/antigoblin-selfheal-loop.pid 2>/dev/null | /opt/bin/awk 'NR==1 && $0 ~ /^[0-9]+$/ { print }')"
+  AUTOSELECT_PID="$(cat /opt/var/run/antigoblin-autoselect.pid 2>/dev/null | /opt/bin/awk 'NR==1 && $0 ~ /^[0-9]+$/ { print }')"
   if [ -n "$SELFHEAL_PID" ] && ! kill -0 "$SELFHEAL_PID" 2>/dev/null; then
     SELFHEAL_PID=""
+  fi
+  if [ -n "$AUTOSELECT_PID" ] && ! kill -0 "$AUTOSELECT_PID" 2>/dev/null; then
+    AUTOSELECT_PID=""
   fi
 
   XRAY_TCP_OK=0
@@ -394,6 +542,16 @@ emit_health() {
   if [ "$BYPASS_IPSET_OK" = "ok" ]; then
     BYPASS_IPSET_SIZE="$(ipset list xkeen_bypass 2>/dev/null | /opt/bin/awk '/^Members:/ { m=1; next } m && NF { c++ } END { print c+0 }')"
   fi
+
+  # TCP interception is the prerequisite for routing.json to matter. A valid
+  # Xray config with a missing PREROUTING hook proxies exactly zero LAN TCP.
+  TCP_CAPTURE_OK="fail"
+  TCP_CAPTURE_PACKETS=0
+  if iptables -t nat -S PREROUTING 2>/dev/null | grep -q -- '-j xkeen'; then
+    TCP_CAPTURE_OK="ok"
+    TCP_CAPTURE_PACKETS="$(iptables -t nat -L PREROUTING -v -n -x 2>/dev/null | /opt/bin/awk '$0 ~ /xkeen/ {sum += $1} END {print sum+0}')"
+  fi
+  case "$TCP_CAPTURE_PACKETS" in ''|*[!0-9]*) TCP_CAPTURE_PACKETS=0 ;; esac
 
   # FD count
   XRAY_FD=0
@@ -473,6 +631,7 @@ emit_health() {
   XRAY_RUN=$([ -n "$XRAY_PID" ] && printf 'true' || printf 'false')
   SB_RUN=$([ -n "$SB_PID" ] && printf 'true' || printf 'false')
   SH_RUN=$([ -n "$SELFHEAL_PID" ] && printf 'true' || printf 'false')
+  AS_RUN=$([ -n "$AUTOSELECT_PID" ] && printf 'true' || printf 'false')
 
   PAYLOAD="$(/opt/bin/jq -n \
     --argjson xray_run "$XRAY_RUN" \
@@ -484,10 +643,14 @@ emit_health() {
     --argjson sb_listen "$SB_LISTEN_OK" \
     --argjson sh_run "$SH_RUN" \
     --arg sh_pid "${SELFHEAL_PID:-}" \
+    --argjson as_run "$AS_RUN" \
+    --arg as_pid "${AUTOSELECT_PID:-}" \
     --arg tproxy_end "$TPROXY_AT_END" \
     --arg ip_rule_masked "$IP_RULE_MASKED" \
     --arg udp_ipset_ok "$UDP_IPSET_OK" \
     --arg bypass_ipset_ok "$BYPASS_IPSET_OK" \
+    --arg tcp_capture_ok "$TCP_CAPTURE_OK" \
+    --argjson tcp_capture_packets "$TCP_CAPTURE_PACKETS" \
     --argjson udp_ipset_size "$UDP_IPSET_SIZE" \
     --argjson bypass_ipset_size "$BYPASS_IPSET_SIZE" \
     --argjson xray_fd "$XRAY_FD" \
@@ -508,13 +671,16 @@ emit_health() {
       services: {
         xray:    { running: $xray_run, pid: $xray_pid, listenTcp: ($xray_tcp == 1), listenRelayUdp: ($xray_relay == 1) },
         singbox: { running: $sb_run, pid: $sb_pid, listenUdp: ($sb_listen == 1) },
-        selfheal:{ running: $sh_run, pid: $sh_pid }
+        selfheal:{ running: $sh_run, pid: $sh_pid },
+        autoselect:{ running: $as_run, pid: $as_pid }
       },
       checks: {
         tproxyRuleAtEnd:   $tproxy_end,
         ipRuleMasked:      $ip_rule_masked,
         udpIpsetExists:    $udp_ipset_ok,
-        bypassIpsetExists: $bypass_ipset_ok
+        bypassIpsetExists: $bypass_ipset_ok,
+        tcpCaptureHook: $tcp_capture_ok,
+        tcpCapturePackets: $tcp_capture_packets
       },
       ipsetSize: { udpRoute: $udp_ipset_size, bypass: $bypass_ipset_size },
       xrayFd: { count: $xray_fd, limit: $xray_fd_limit },
@@ -550,6 +716,7 @@ emit_logs() {
     xray)     LOG_FILE="$LOG_PATH" ;;
     singbox)  LOG_FILE="/opt/var/log/sing-box-xkeen.log" ;;
     selfheal) LOG_FILE="/opt/var/log/xkeen-selfheal.log" ;;
+    autoselect) LOG_FILE="/opt/var/log/antigoblin-autoselect.log" ;;
     health)   LOG_FILE="/opt/var/log/xkeen-health.log" ;;
     sysctl)   LOG_FILE="/opt/var/log/xkeen-sysctl.log" ;;
     fd-dump)
@@ -580,6 +747,18 @@ emit_logs() {
   exit 0
 }
 
+probe_proxy_exit_ip() {
+  # Test the actual active outbound, not the VPN server endpoint. The SOCKS
+  # inbound is explicitly routed to tag vless-reality, so this works for
+  # both native Xray VLESS/VMess and sing-box-backed protocols.
+  [ -x /opt/bin/curl ] || { printf ''; return 0; }
+  EXIT_IP="$('/opt/bin/curl' -fsS --socks5-hostname 127.0.0.1:61080 --connect-timeout 3 --max-time 6 https://api.ipify.org 2>/dev/null | tr -d '\r\n ' | head -c 80)"
+  case "$EXIT_IP" in
+    ''|*[!0-9a-fA-F:.]*) printf '' ;;
+    *) printf '%s' "$EXIT_IP" ;;
+  esac
+}
+
 emit_stack_info() {
   XRAY_PID="$(get_xray_pid)"
   SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
@@ -604,6 +783,8 @@ emit_stack_info() {
       ' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
     fi
   fi
+
+  VPN_EXIT_IP="$(probe_proxy_exit_ip)"
 
   WAN_IFACE="$(ip route show default 2>/dev/null | /opt/bin/awk '/^default/{print $5; exit}')"
   WAN_IP=""
@@ -676,7 +857,8 @@ emit_stack_info() {
     --arg vpn_host "$VPN_HOST" \
     --argjson vpn_port "$VPN_PORT" \
     --arg vpn_sni "$VPN_SNI" \
-    --arg vpn_ip "$VPN_IP" \
+    --arg vpn_endpoint_ip "$VPN_IP" \
+    --arg vpn_exit_ip "$VPN_EXIT_IP" \
     --arg wan_iface "$WAN_IFACE" \
     --arg wan_ip "$WAN_IP" \
     --arg lan_net "$LAN_NET" \
@@ -697,7 +879,7 @@ emit_stack_info() {
     '{
       ok: true,
       versions: { antigoblin: $ag_ver, xray: $xray_ver, singbox: $sb_ver, kernel: $kernel, hostname: $hostname, uptimeSec: $uptime_sec },
-      vpn:      { host: $vpn_host, port: $vpn_port, sni: $vpn_sni, exitIp: $vpn_ip },
+      vpn:      { host: $vpn_host, port: $vpn_port, sni: $vpn_sni, endpointIp: $vpn_endpoint_ip, exitIp: $vpn_exit_ip },
       network:  { wanIface: $wan_iface, wanIp: $wan_ip, gateway: $gw, lanNet: $lan_net },
       xkeen:    { policyName: $policy_name, policyDescription: $policy_desc, mark: $xkeen_mark, tproxyUdp: 61221, redirectTcp: 61219, ssRelay: "127.0.0.1:62640" },
       runtime:  { selfhealIntervalSec: 15, logRotateInterval: "daily", backupRetention: 5, fdWarn: 400, fdCritical: 600 },
@@ -723,27 +905,10 @@ restart_service() {
       fi
       ;;
     singbox)
-      if [ -x /opt/etc/init.d/S24antigoblin-singbox ]; then
-        /opt/etc/init.d/S24antigoblin-singbox restart >/dev/null 2>&1
-        # Poll for :61221 (TPROXY UDP) — pidof alone reports running
-        # before the socket is actually bound.
-        i=0
-        SB_BOUND=0
-        while [ $i -lt 8 ]; do
-          if pidof sing-box >/dev/null 2>&1 && netstat -lnpu 2>/dev/null | grep -q ':61221 '; then
-            SB_BOUND=1
-            break
-          fi
-          sleep 1
-          i=$((i + 1))
-        done
-        if [ "$SB_BOUND" = "1" ]; then
-          json_ok "{\"ok\":true,\"service\":\"singbox\"}"
-        else
-          json_err "singbox not listening on :61221 after restart"
-        fi
+      if restart_singbox; then
+        json_ok "{\"ok\":true,\"service\":\"singbox\"}"
       else
-        json_err "singbox init script missing"
+        json_err "singbox restart timed out or required listener did not bind"
       fi
       ;;
     selfheal)
@@ -1051,6 +1216,13 @@ case "$REQUEST_METHOD" in
     if [ "$KIND" = "outbounds" ]; then
       emit_file "$OUTBOUNDS_PATH"
     fi
+    if [ "$KIND" = "autoselect-status" ]; then
+      if [ -f "$AUTOSELECT_STATUS_PATH" ]; then
+        emit_file "$AUTOSELECT_STATUS_PATH"
+      fi
+      json_ok '{"ok":true,"phase":"idle","message":"no latency run yet","switched":false,"bestId":"","bestLatencyMs":null,"currentId":"","currentLatencyMs":null,"updatedAt":0,"results":[]}'
+      exit 0
+    fi
     if [ "$KIND" = "health" ]; then
       emit_health
     fi
@@ -1065,7 +1237,7 @@ case "$REQUEST_METHOD" in
   POST)
     KIND="$(get_kind)"
     # Auth before body for anything that isn't login/logout — otherwise an
-    # unauthenticated client can waste CGI processes uploading a 512KB body
+    # unauthenticated client can waste CGI processes uploading a multi-megabyte body
     # only to fail the session check afterward. Login/logout themselves
     # legitimately need the body before their own auth logic.
     case "$KIND" in
@@ -1088,12 +1260,180 @@ case "$REQUEST_METHOD" in
     fi
 
     case "$KIND" in
-      probe|subscription-fetch)
+      probe|subscription-fetch|autoselect-run|autoselect-catalog)
+        ;;
+      state|apply-runtime)
+        # Interactive state/apply calls must fail fast if self-heal currently
+        # owns the lock. Waiting a full minute looked exactly like a frozen UI.
+        # State still uses the shared lock so it cannot race an auto-selector
+        # switch that updates activeProxyId.
+        require_apply_lock 8
         ;;
       *)
         require_apply_lock
         ;;
     esac
+
+    if [ "$KIND" = "apply-runtime" ]; then
+      AP_STATE="/tmp/xkeen-apply-state-$$.json"
+      AP_OUT="/tmp/xkeen-apply-outbounds-$$.json"
+      AP_SB="/tmp/xkeen-apply-singbox-$$.json"
+      AP_ROUTE="/tmp/xkeen-apply-routing-$$.json"
+      AP_SB_LOG="/tmp/xkeen-apply-singbox-check-$$.log"
+      AP_XRAY_LOG="/tmp/xkeen-xray-candidate-check-$$.log"
+
+      cleanup_apply_tmp() {
+        rm -f "$AP_STATE" "$AP_OUT" "$AP_SB" "$AP_ROUTE" "$AP_SB_LOG" "$AP_XRAY_LOG" 2>/dev/null || true
+      }
+
+      if ! /opt/bin/jq -c '.state' "$TMP_BODY" > "$AP_STATE" 2>/dev/null          || ! /opt/bin/jq -c '.outbounds' "$TMP_BODY" > "$AP_OUT" 2>/dev/null          || ! /opt/bin/jq -c '.singbox' "$TMP_BODY" > "$AP_SB" 2>/dev/null          || ! /opt/bin/jq -c '.routing' "$TMP_BODY" > "$AP_ROUTE" 2>/dev/null; then
+        cleanup_apply_tmp
+        json_err "invalid apply-runtime payload"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+
+      if ! /opt/bin/jq -e 'type == "object" and (.profiles | type == "array")' "$AP_STATE" >/dev/null 2>&1; then
+        cleanup_apply_tmp; json_err "invalid state in apply-runtime"; rm -f "$TMP_BODY"; exit 0
+      fi
+      if ! /opt/bin/jq -e '.outbounds | type == "array" and (map(.tag) | index("vless-reality") != null)' "$AP_OUT" >/dev/null 2>&1; then
+        cleanup_apply_tmp; json_err "invalid xray outbounds in apply-runtime"; rm -f "$TMP_BODY"; exit 0
+      fi
+      if ! /opt/bin/jq -e '(.outbounds | type == "array") and (.inbounds | type == "array")' "$AP_SB" >/dev/null 2>&1; then
+        cleanup_apply_tmp; json_err "invalid sing-box config in apply-runtime"; rm -f "$TMP_BODY"; exit 0
+      fi
+      if ! /opt/bin/jq -e '.routing.rules | type == "array"' "$AP_ROUTE" >/dev/null 2>&1; then
+        cleanup_apply_tmp; json_err "invalid routing config in apply-runtime"; rm -f "$TMP_BODY"; exit 0
+      fi
+
+      if [ -x /opt/sbin/sing-box ] && ! validate_singbox_file "$AP_SB" "$AP_SB_LOG"; then
+        AP_ERR="$(tail -n 4 "$AP_SB_LOG" 2>/dev/null | tr '\n' ' ' | tr '"\\' "'/" | cut -c1-360)"
+        cleanup_apply_tmp
+        json_err "sing-box candidate check failed: $AP_ERR"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+
+      if ! validate_xray_candidate "$AP_OUT" "$AP_ROUTE"; then
+        AP_ERR="$(tail -n 5 "$AP_XRAY_LOG" 2>/dev/null | tr '\n' ' ' | tr '"\\' "'/" | cut -c1-360)"
+        cleanup_apply_tmp
+        json_err "xray candidate check failed: $AP_ERR"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+
+      TS="$(date +%Y%m%d-%H%M%S)"
+      STATE_BAK="${STATE_PATH}.bak-ui-${TS}"
+      OUT_BAK="${OUTBOUNDS_PATH}.bak-ui-${TS}"
+      SB_BAK="${SINGBOX_PATH}.bak-ui-${TS}"
+      ROUTE_BAK="${ROUTING_PATH}.bak-ui-${TS}"
+      cp "$STATE_PATH" "$STATE_BAK" 2>/dev/null || true
+      cp "$OUTBOUNDS_PATH" "$OUT_BAK" 2>/dev/null || true
+      cp "$SINGBOX_PATH" "$SB_BAK" 2>/dev/null || true
+      cp "$ROUTING_PATH" "$ROUTE_BAK" 2>/dev/null || true
+
+      rollback_apply_runtime() {
+        [ -f "$STATE_BAK" ] && cp "$STATE_BAK" "$STATE_PATH" 2>/dev/null || true
+        [ -f "$OUT_BAK" ] && cp "$OUT_BAK" "$OUTBOUNDS_PATH" 2>/dev/null || true
+        [ -f "$SB_BAK" ] && cp "$SB_BAK" "$SINGBOX_PATH" 2>/dev/null || true
+        [ -f "$ROUTE_BAK" ] && cp "$ROUTE_BAK" "$ROUTING_PATH" 2>/dev/null || true
+      }
+
+      STATE_STAGE="${STATE_PATH}.new-apply-$$"
+      OUT_STAGE="${OUTBOUNDS_PATH}.new-apply-$$"
+      SB_STAGE="${SINGBOX_PATH}.new-apply-$$"
+      ROUTE_STAGE="${ROUTING_PATH}.new-apply-$$"
+      if ! cp "$AP_STATE" "$STATE_STAGE"          || ! cp "$AP_OUT" "$OUT_STAGE"          || ! cp "$AP_SB" "$SB_STAGE"          || ! cp "$AP_ROUTE" "$ROUTE_STAGE"; then
+        rm -f "$STATE_STAGE" "$OUT_STAGE" "$SB_STAGE" "$ROUTE_STAGE"
+        cleanup_apply_tmp
+        json_err "failed to stage apply-runtime files"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+
+      COMMIT_OK=1
+      mv "$OUT_STAGE" "$OUTBOUNDS_PATH" || COMMIT_OK=0
+      [ "$COMMIT_OK" = "1" ] && mv "$SB_STAGE" "$SINGBOX_PATH" || COMMIT_OK=0
+      [ "$COMMIT_OK" = "1" ] && mv "$ROUTE_STAGE" "$ROUTING_PATH" || COMMIT_OK=0
+      [ "$COMMIT_OK" = "1" ] && mv "$STATE_STAGE" "$STATE_PATH" || COMMIT_OK=0
+      rm -f "$STATE_STAGE" "$OUT_STAGE" "$SB_STAGE" "$ROUTE_STAGE" 2>/dev/null || true
+      if [ "$COMMIT_OK" != "1" ]; then
+        rollback_apply_runtime
+        cleanup_apply_tmp
+        json_err "failed to commit apply-runtime files; previous configs restored"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+      chmod 600 "$STATE_PATH" 2>/dev/null || true
+
+      if ! restart_singbox; then
+        rollback_apply_runtime
+        restart_singbox >/dev/null 2>&1 || true
+        restart_xray >/dev/null 2>&1 || true
+        cleanup_apply_tmp
+        json_err "sing-box restart failed; previous configs restored"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+      if ! restart_xray; then
+        rollback_apply_runtime
+        restart_singbox >/dev/null 2>&1 || true
+        restart_xray >/dev/null 2>&1 || true
+        cleanup_apply_tmp
+        json_err "xray restart failed; previous configs restored"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+
+      CAPTURE_READY=false
+      UDP_CAPTURE_READY=true
+      UDP_CAPTURE_REQUIRED=false
+      if type xkeen_ensure_tcp_capture_hook >/dev/null 2>&1 && xkeen_ensure_tcp_capture_hook; then
+        CAPTURE_READY=true
+      fi
+
+      # Catch-all VPN profiles (fallbackOutbound=vless-reality) must capture
+      # UDP immediately too. Otherwise browsers can keep QUIC/HTTP3 on the WAN
+      # while TCP is already going through VPN. This path is intentionally
+      # synchronous and cheap: xkeen_build_udp_route_ipset uses 0.0.0.0/0 split
+      # into two ranges and skips per-domain DNS resolution for catch-all.
+      if /opt/bin/jq -e '
+        (.activeProfileId // "") as $id
+        | .profiles[]? | select(.id == $id)
+        | .fallbackOutbound == "vless-reality"
+      ' "$STATE_PATH" >/dev/null 2>&1; then
+        UDP_CAPTURE_REQUIRED=true
+        if ! type xkeen_apply_udp_route >/dev/null 2>&1 || ! xkeen_apply_udp_route; then
+          UDP_CAPTURE_READY=false
+        fi
+      fi
+
+      # Keep self-heal alive after an apply. Auto-select is restarted only
+      # after the browser writes the fresh autoselect catalog (see that branch
+      # below), otherwise a just-started loop can race on stale server configs.
+      [ -x /opt/etc/init.d/S25antigoblin-selfheal ] && /opt/etc/init.d/S25antigoblin-selfheal start >/dev/null 2>&1 || true
+
+      cleanup_apply_tmp
+      rm -f "$TMP_BODY"
+
+      # Release before forcing the heavy DNS/ipset repair. The force-run takes
+      # the same lock itself; doing this while our CGI still owns it would make
+      # it immediately no-op. The browser gets its success response without
+      # waiting for DNS resolution, while the TCP capture hook is already live.
+      release_apply_lock_now
+      if [ -x "$SELFHEAL_PATH" ]; then
+        ( exec >/dev/null 2>&1 </dev/null; sleep 1; "$SELFHEAL_PATH" --force || true ) &
+      fi
+
+      if [ "$CAPTURE_READY" != "true" ]; then
+        json_err "VPN configs are valid and services restarted, but the xkeen TCP capture hook could not be installed; check Keenetic xkeen policy/iptables"
+      elif [ "$UDP_CAPTURE_REQUIRED" = "true" ] && [ "$UDP_CAPTURE_READY" != "true" ]; then
+        json_err "TCP capture is ready, but catch-all VPN requires UDP/QUIC TPROXY and it could not be installed; check xt_TPROXY/ip rule support"
+      else
+        json_ok "{\"ok\":true,\"restarted\":true,\"tcpCaptureReady\":true,\"udpCaptureRequired\":$UDP_CAPTURE_REQUIRED,\"udpCaptureReady\":$UDP_CAPTURE_READY,\"backgroundRepair\":true}"
+      fi
+      exit 0
+    fi
 
     if [ "$KIND" = "state" ]; then
       if ! /opt/bin/jq -e 'type == "object" and has("profiles")' "$TMP_BODY" >/dev/null 2>&1; then
@@ -1182,6 +1522,45 @@ case "$REQUEST_METHOD" in
       fetch_subscription
     fi
 
+    if [ "$KIND" = "autoselect-catalog" ]; then
+      if ! /opt/bin/jq -e '(.version == 1) and (.entries | type == "array") and all(.entries[]?; (.id|type=="string") and (.profileId|type=="string") and (.address|type=="string") and (.port|type=="number") and (.outbounds|type=="object") and (.singbox|type=="object"))' "$TMP_BODY" >/dev/null 2>&1; then
+        json_err "invalid autoselect catalog"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+      CAT_STAGE="${AUTOSELECT_CATALOG_PATH}.new-$$"
+      if ! cp "$TMP_BODY" "$CAT_STAGE" || ! mv "$CAT_STAGE" "$AUTOSELECT_CATALOG_PATH"; then
+        rm -f "$CAT_STAGE"
+        json_err "failed to write autoselect catalog"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+      chmod 600 "$AUTOSELECT_CATALOG_PATH" 2>/dev/null || true
+      # Restart only after the catalog rename is complete. This makes interval
+      # changes effective immediately and guarantees the first loop iteration
+      # sees the same server list/configs the UI just saved.
+      if [ -x /opt/etc/init.d/S25antigoblin-autoselect ]; then
+        /opt/etc/init.d/S25antigoblin-autoselect restart >/dev/null 2>&1 || true
+      fi
+      json_ok "{\"ok\":true,\"catalog\":\"$AUTOSELECT_CATALOG_PATH\"}"
+      rm -f "$TMP_BODY"
+      exit 0
+    fi
+
+    if [ "$KIND" = "autoselect-run" ]; then
+      if [ ! -x "$AUTOSELECT_SCRIPT" ]; then
+        json_err "autoselect watchdog is not installed"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
+      # Manual run intentionally returns immediately. The UI polls
+      # kind=autoselect-status while the endpoint probes run in background.
+      ( exec >/dev/null 2>&1 </dev/null; "$AUTOSELECT_SCRIPT" --force ) &
+      json_ok '{"ok":true,"started":true}'
+      rm -f "$TMP_BODY"
+      exit 0
+    fi
+
     if [ "$KIND" = "singbox" ]; then
       if ! /opt/bin/jq -e '.outbounds | type == "array"' "$TMP_BODY" >/dev/null 2>&1 \
          || ! /opt/bin/jq -e '.inbounds  | type == "array"' "$TMP_BODY" >/dev/null 2>&1; then
@@ -1193,7 +1572,7 @@ case "$REQUEST_METHOD" in
 
       if [ -x /opt/sbin/sing-box ]; then
         SB_CHECK_LOG="/tmp/xkeen-singbox-check-$$.log"
-        if ! /opt/sbin/sing-box check -c "$TMP_BODY" >"$SB_CHECK_LOG" 2>&1; then
+        if ! validate_singbox_file "$TMP_BODY" "$SB_CHECK_LOG"; then
           # sing-box diagnostics can contain JSON snippets (quotes and
           # backslashes). json_err prints into a JSON string, so flatten and
           # neutralise those two characters before returning the message.
@@ -1219,9 +1598,17 @@ case "$REQUEST_METHOD" in
         exit 0
       fi
 
-      /opt/etc/init.d/S24antigoblin-singbox restart >/dev/null 2>&1 || true
+      if ! restart_singbox; then
+        if [ -f "$SB_BAK" ]; then
+          cp "$SB_BAK" "$SINGBOX_PATH" 2>/dev/null || true
+          restart_singbox >/dev/null 2>&1 || true
+        fi
+        json_err "singbox restart timed out; previous config restored"
+        rm -f "$TMP_BODY"
+        exit 0
+      fi
 
-      json_ok "{\"ok\":true,\"singbox\":\"$SINGBOX_PATH\"}"
+      json_ok "{\"ok\":true,\"singbox\":\"$SINGBOX_PATH\",\"restarted\":true}"
       rm -f "$TMP_BODY"
       exit 0
     fi

@@ -52,6 +52,10 @@ const LANGUAGE_KEY = "xkeen-manager-lang-v1";
 const STATE_URL = "./api/routing.cgi?kind=state";
 const OUTBOUNDS_URL = "./api/routing.cgi?kind=outbounds";
 const SINGBOX_URL = "./api/routing.cgi?kind=singbox";
+const AUTOSELECT_CATALOG_URL = "./api/routing.cgi?kind=autoselect-catalog";
+const AUTOSELECT_STATUS_URL = "./api/routing.cgi?kind=autoselect-status";
+const AUTOSELECT_RUN_URL = "./api/routing.cgi?kind=autoselect-run";
+const APPLY_RUNTIME_URL = "./api/routing.cgi?kind=apply-runtime";
 const PROBE_URL = "./api/routing.cgi?kind=probe";
 const REPAIR_URL = "./api/routing.cgi?kind=repair-runtime";
 const LOGIN_URL = "./api/routing.cgi?kind=login";
@@ -103,6 +107,17 @@ const LOCALES = {
     activeProxyFilterPlaceholder: "Поиск по имени, протоколу или адресу…",
     activeProxyCountFmt: "{shown} из {total}",
     activeProxyNoMatches: "Ничего не найдено. Очисти поиск или проверь название / протокол.",
+    autoSelectLabel: "Автоматически выбирать сервер с минимальной задержкой",
+    autoSelectIntervalLabel: "Проверять",
+    autoSelectThresholdLabel: "Переключать, если быстрее минимум на",
+    autoSelectProbeAll: "Проверить все и выбрать лучший",
+    autoSelectNever: "Пинги ещё не измерялись.",
+    autoSelectProbing: "Проверяю задержку всех серверов…",
+    autoSelectOffline: "нет ответа",
+    autoSelectBestFmt: "Лучший: {best} · {ms} мс. {message}",
+    autoSelectCurrentFmt: "Активный: {current} · {ms} мс. {message}",
+    autoSelectRunFailed: "Не удалось запустить проверку",
+    policyTrafficHint: "Важно: routing.json применяется только к трафику устройств, назначенных политике Keenetic xkeen. Если счётчик перехвата в Диагностике остаётся 0 — назначь устройство в «Приоритеты подключений».",
     subsHelp: "Лучший вариант, если провайдер выдаёт URL подписки.",
     manualKeysHelp: "URI вида vless://, hysteria2://, tuic:// и другие.",
     manualKeyFormHelp: "Вставь ссылку целиком. Поля ниже заполнятся автоматически; вручную их обычно трогать не надо.",
@@ -125,8 +140,8 @@ const LOCALES = {
     groupsTitle: "Что вести через VPN",
     groupsHelp: "Каждая группа — это список доменов и IP/CIDR. Выбери «Через VPN» или «Мимо VPN» и включи группу.",
     groupSummaryFmt: "{domains} дом. · {cidrs} CIDR",
-    actionDockTitle: "Готово к применению?",
-    actionDockHint: "Сохраняет профиль и перезапускает VPN-маршрутизацию.",
+    actionDockTitle: "Изменения применяются только по кнопке",
+    actionDockHint: "После изменения ключа или правил нажми «Сохранить и применить». Настоящий прогресс появится здесь во время операции.",
     importBtn: "Импорт настроек",
     exportBtn: "Экспорт настроек",
     repairBtn: "Перезапустить VPN",
@@ -276,6 +291,8 @@ const LOCALES = {
     healthRunning: "работает",
     healthStopped: "остановлен",
     healthCheckTproxy: "Правило TPROXY в конце mangle PREROUTING",
+    healthCheckTcpCapture: "TCP-перехват PREROUTING → xkeen",
+    healthCapturePacketsFmt: "{n} пак.",
     healthCheckIpRule: "ip rule с маской 0x111/0x111",
     healthCheckUdpIpset: "ipset xkeen_udp_route существует",
     healthCheckBypassIpset: "ipset xkeen_bypass существует",
@@ -302,7 +319,7 @@ const LOCALES = {
     stackAntiGoblinVer: "AntiGoblin",
     stackXrayVer: "xray", stackSingboxVer: "sing-box", stackKernel: "ядро", stackUptime: "uptime",
     stackVpnSection: "VPN",
-    stackVpnHost: "сервер", stackVpnExitIp: "exit IP", stackVpnSni: "Reality SNI",
+    stackVpnHost: "сервер", stackVpnEndpointIp: "IP сервера", stackVpnExitIp: "VPN exit IP", stackVpnSni: "Reality SNI",
     stackNetSection: "Сеть",
     stackWanIface: "WAN-интерфейс", stackWanIp: "WAN IP", stackGw: "default gateway", stackLan: "LAN сеть",
     stackXkeenSection: "xkeen",
@@ -362,6 +379,17 @@ const LOCALES = {
     activeProxyFilterPlaceholder: "Search by name, protocol, or address…",
     activeProxyCountFmt: "{shown} of {total}",
     activeProxyNoMatches: "No servers match this search. Clear the filter or try another name / protocol.",
+    autoSelectLabel: "Automatically choose the lowest-latency server",
+    autoSelectIntervalLabel: "Check every",
+    autoSelectThresholdLabel: "Switch only if faster by at least",
+    autoSelectProbeAll: "Check all and choose the best",
+    autoSelectNever: "Latency has not been measured yet.",
+    autoSelectProbing: "Checking latency of all servers…",
+    autoSelectOffline: "no response",
+    autoSelectBestFmt: "Best: {best} · {ms} ms. {message}",
+    autoSelectCurrentFmt: "Active: {current} · {ms} ms. {message}",
+    autoSelectRunFailed: "Failed to start latency check",
+    policyTrafficHint: "Important: routing.json only applies to devices assigned to the Keenetic xkeen policy. If the capture counter in Diagnostics stays at 0, assign the device under Connection priorities.",
     subsHelp: "Best option when your provider gives you a subscription URL.",
     manualKeysHelp: "URIs such as vless://, hysteria2://, tuic:// and others.",
     manualKeyFormHelp: "Paste the complete link. The fields below are auto-filled and normally do not need manual editing.",
@@ -384,8 +412,8 @@ const LOCALES = {
     groupsTitle: "What should use the VPN",
     groupsHelp: "Each group is a list of domains and IP/CIDR ranges. Choose VPN or bypass and enable the group.",
     groupSummaryFmt: "{domains} domains · {cidrs} CIDR",
-    actionDockTitle: "Ready to apply?",
-    actionDockHint: "Saves the profile and restarts VPN routing.",
+    actionDockTitle: "Changes are applied only when you click the button",
+    actionDockHint: "After changing a server or rules, click Save and apply. Real progress will be shown here during the operation.",
     importBtn: "Import settings",
     exportBtn: "Export settings",
     repairBtn: "Restart VPN",
@@ -532,6 +560,8 @@ const LOCALES = {
     healthRunning: "running",
     healthStopped: "stopped",
     healthCheckTproxy: "TPROXY rule at end of mangle PREROUTING",
+    healthCheckTcpCapture: "TCP capture PREROUTING → xkeen",
+    healthCapturePacketsFmt: "{n} pkts",
     healthCheckIpRule: "ip rule with mask 0x111/0x111",
     healthCheckUdpIpset: "xkeen_udp_route ipset present",
     healthCheckBypassIpset: "xkeen_bypass ipset present",
@@ -558,7 +588,7 @@ const LOCALES = {
     stackAntiGoblinVer: "AntiGoblin",
     stackXrayVer: "xray", stackSingboxVer: "sing-box", stackKernel: "kernel", stackUptime: "uptime",
     stackVpnSection: "VPN",
-    stackVpnHost: "server", stackVpnExitIp: "exit IP", stackVpnSni: "Reality SNI",
+    stackVpnHost: "server", stackVpnEndpointIp: "server IP", stackVpnExitIp: "VPN exit IP", stackVpnSni: "Reality SNI",
     stackNetSection: "Network",
     stackWanIface: "WAN interface", stackWanIp: "WAN IP", stackGw: "default gateway", stackLan: "LAN net",
     stackXkeenSection: "xkeen",
@@ -600,6 +630,7 @@ const fallbackState = {
       fallbackOutbound: "direct",
       proxyConfig: createDefaultProxyConfig(),
       muxConfig: createDefaultMuxConfig(),
+      autoSelect: createDefaultAutoSelectConfig(),
       groups: [
         {
           id: "fallback-vpn",
@@ -625,6 +656,8 @@ const fallbackState = {
 };
 
 let state = null;
+let autoSelectRuntime = { phase: "idle", message: "", results: [], bestId: "", bestLatencyMs: null, currentId: "", currentLatencyMs: null, updatedAt: 0 };
+let autoSelectTimer = null;
 
 const els = {
   authOverlay: document.getElementById("authOverlay"),
@@ -700,6 +733,15 @@ const els = {
   activeProxyList: document.getElementById("activeProxyList"),
   activeProxyFilter: document.getElementById("activeProxyFilter"),
   activeProxyCount: document.getElementById("activeProxyCount"),
+  policyTrafficHint: document.getElementById("policyTrafficHint"),
+  autoSelectEnabled: document.getElementById("autoSelectEnabled"),
+  autoSelectLabel: document.getElementById("autoSelectLabel"),
+  autoSelectIntervalLabel: document.getElementById("autoSelectIntervalLabel"),
+  autoSelectInterval: document.getElementById("autoSelectInterval"),
+  autoSelectThresholdLabel: document.getElementById("autoSelectThresholdLabel"),
+  autoSelectThreshold: document.getElementById("autoSelectThreshold"),
+  probeAllBtn: document.getElementById("probeAllBtn"),
+  autoSelectStatus: document.getElementById("autoSelectStatus"),
   manualKeyForm: document.getElementById("manualKeyForm"),
   manualKeyFormTitle: document.getElementById("manualKeyFormTitle"),
   manualKeyName: document.getElementById("manualKeyName"),
@@ -814,6 +856,7 @@ async function bootstrap() {
     renderHealth().catch(() => {});
     renderStackInfo().catch(() => {});
     startExitIpCheck();
+    startAutoSelectPolling();
   } catch (error) {
     pushDebug(`bootstrap failed: ${error.message}`);
     if (isAuthError(error)) {
@@ -834,6 +877,11 @@ async function bootstrap() {
     state = cloneFallback();
     persistAndRender();
   }
+}
+
+function setApplyDockState(title, hint) {
+  if (els.actionDockTitle && title) els.actionDockTitle.textContent = title;
+  if (els.actionDockHint && hint) els.actionDockHint.textContent = hint;
 }
 
 function bindTopLevel() {
@@ -901,6 +949,57 @@ function bindTopLevel() {
   if (els.quickApplyBtn) {
     els.quickApplyBtn.addEventListener("click", () => els.saveApplyBtn.click());
   }
+  if (els.autoSelectEnabled) {
+    els.autoSelectEnabled.addEventListener("change", () => {
+      const profile = getActiveProfile();
+      if (!profile) return;
+      profile.autoSelect = normalizeAutoSelectConfig(profile.autoSelect);
+      profile.autoSelect.enabled = els.autoSelectEnabled.checked;
+      persistState();
+      saveRemoteState().catch((error) => pushDebug(`autoselect state sync failed: ${error.message}`));
+    });
+  }
+  if (els.autoSelectInterval) {
+    els.autoSelectInterval.addEventListener("change", () => {
+      const profile = getActiveProfile();
+      if (!profile) return;
+      profile.autoSelect = normalizeAutoSelectConfig({ ...profile.autoSelect, intervalSec: Number(els.autoSelectInterval.value) });
+      persistState();
+      saveRemoteState().catch((error) => pushDebug(`autoselect interval sync failed: ${error.message}`));
+    });
+  }
+  if (els.autoSelectThreshold) {
+    els.autoSelectThreshold.addEventListener("change", () => {
+      const profile = getActiveProfile();
+      if (!profile) return;
+      profile.autoSelect = normalizeAutoSelectConfig({ ...profile.autoSelect, minImprovementMs: Number(els.autoSelectThreshold.value) });
+      els.autoSelectThreshold.value = String(profile.autoSelect.minImprovementMs);
+      persistState();
+      saveRemoteState().catch((error) => pushDebug(`autoselect threshold sync failed: ${error.message}`));
+    });
+  }
+  if (els.probeAllBtn) {
+    els.probeAllBtn.addEventListener("click", async () => {
+      els.probeAllBtn.disabled = true;
+      autoSelectRuntime = { ...autoSelectRuntime, phase: "probing" };
+      renderAutoSelectStatus();
+      try {
+        await runAutoSelectNow();
+        // Worker is detached. Poll a few times quickly; normal 15s polling
+        // takes over after that without keeping the button stuck forever.
+        for (let i = 0; i < 6; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const status = await fetchAutoSelectStatus().catch(() => null);
+          if (status && status.phase !== "probing") break;
+        }
+      } catch (error) {
+        autoSelectRuntime = { ...autoSelectRuntime, phase: "error", message: `${T.autoSelectRunFailed}: ${error.message}` };
+        renderAutoSelectStatus();
+      } finally {
+        els.probeAllBtn.disabled = false;
+      }
+    });
+  }
   document.querySelectorAll(".setup-step[href^='#']").forEach((link) => {
     link.addEventListener("click", (event) => {
       const target = document.querySelector(link.getAttribute("href"));
@@ -924,6 +1023,7 @@ function bindTopLevel() {
     // Stop background polling — after logout every CGI call will 401,
     // and the visibilitychange listener would keep re-triggering it.
     if (exitIpTimer) { clearInterval(exitIpTimer); exitIpTimer = null; }
+    if (autoSelectTimer) { clearInterval(autoSelectTimer); autoSelectTimer = null; }
     lastKnownVpnIp = null;
     EXIT_IP_LOG.length = 0;
     if (els.exitIpRow) els.exitIpRow.innerHTML = "";
@@ -1282,6 +1382,7 @@ function bindTopLevel() {
     const toast = showToast(T.toastSavingState || "Сохранение профиля...", { kind: "progress" });
     try {
       await saveRemoteState();
+      await saveRemoteAutoSelectCatalog();
       persistState();
       toast.update(T.saveStateDone, "success");
     } catch (error) {
@@ -1296,38 +1397,46 @@ function bindTopLevel() {
     els.saveApplyBtn.disabled = true;
     if (els.quickApplyBtn) els.quickApplyBtn.disabled = true;
     const toast = showToast(T.toastSavingApplying || "Сохранение и применение...", { kind: "progress" });
-    // Save is a 4-step pipeline. Each step can partially succeed on the
-    // router; if step 3 fails, step 1+2 already committed. Tag the current
-    // step so the user sees WHICH one failed, not a generic "Save failed".
-    let step = "state";
+    setApplyDockState(currentLang === "ru" ? "Применяю VPN…" : "Applying VPN…", currentLang === "ru" ? "Этап 1/2: проверка конфигов, перезапуск и восстановление перехвата." : "Step 1/2: config validation, restart and traffic-capture repair.");
+    let step = "runtime";
     try {
-      step = "state";       await saveRemoteState();
-      step = "outbounds";   await saveRemoteOutbounds();
-      step = "sing-box";    await saveRemoteSingbox();
-      step = "routing";
-      // Routing apply is the heaviest CGI call in the pipeline: validate the
-      // whole confdir with `xray -test`, then a graceful xray restart (up to
-      // ~8s waiting for the old PID + ~12s polling :61219 to come back up).
-      // Under a busy apply lock or slow flash it can push past the 20s
-      // default. 45s comfortably covers a real restart while still cutting
-      // in well before uhttpd's own `-t 120` timeout.
-      const routingResponse = await fetchWithTimeout(LIVE_ROUTING_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify(buildRoutingDocument(getActiveProfile()))
-      }, 45000);
-      await parseResponseOrThrow(routingResponse);
+      // One transactional backend call validates the future xray + sing-box
+      // configs first, commits state/outbounds/routing together, restarts both
+      // daemons, and installs the TCP capture hook before it returns success.
+      // This replaces the old five-CGI pipeline where self-heal/auto-select
+      // could grab the lock between steps and make the UI appear to hang.
+      toast.update("1/2 · " + (currentLang === "ru" ? "Проверяю и применяю VPN…" : "Validating and applying VPN…"), "progress");
+      await saveRemoteRuntimeBundle();
+
+      step = "catalog";
+      setApplyDockState(currentLang === "ru" ? "VPN уже применён" : "VPN is already applied", currentLang === "ru" ? "Этап 2/2: обновляю каталог пингов для автоматического выбора." : "Step 2/2: updating the latency catalog for automatic selection.");
+      toast.update("2/2 · " + (currentLang === "ru" ? "Обновляю список для авто-выбора…" : "Updating auto-selection catalog…"), "progress");
+      let catalogWarning = "";
+      try {
+        await saveRemoteAutoSelectCatalog();
+      } catch (catalogError) {
+        // Runtime is already live at this point. Do not lie that the whole
+        // apply failed just because the optional latency catalog write did.
+        catalogWarning = catalogError.message;
+        pushDebug(`apply succeeded; autoselect catalog sync failed: ${catalogWarning}`);
+      }
+
       step = "done";
       persistState();
-      // Active key / VPN host might have changed by this apply; drop
-      // cached exit-IP so the next tick can re-detect.
       lastKnownVpnIp = null;
       EXIT_IP_LOG.length = 0;
-      toast.update(T.saveApplyDone, "success");
-      // Re-enable Save & Apply BEFORE health/stack refreshes — otherwise
-      // if both /health and /stack-info stall on their 20s timeouts the
-      // user sits with a greyed-out button for ~40s after the toast
-      // already said success, and thinks the apply is still in flight.
+      if (catalogWarning) {
+        setApplyDockState(currentLang === "ru" ? "VPN применён с предупреждением" : "VPN applied with a warning", catalogWarning);
+        toast.update((currentLang === "ru" ? "VPN применён, но авто-выбор пока без нового каталога: " : "VPN applied, but auto-select catalog update failed: ") + catalogWarning, "error");
+      } else {
+        setApplyDockState(currentLang === "ru" ? "Применено" : "Applied", currentLang === "ru" ? "Xray/sing-box перезапущены, TCP-перехват xkeen установлен. Пинги серверов запускаются отдельно." : "Xray/sing-box restarted and the xkeen TCP capture hook is installed. Server latency probing runs separately.");
+        toast.update(T.saveApplyDone, "success");
+        const profile = getActiveProfile();
+        if (profile?.autoSelect?.enabled) {
+          startAutoSelectProbe().catch((error) => pushDebug(`post-apply latency probe failed to start: ${error.message}`));
+        }
+      }
+
       els.saveApplyBtn.disabled = false;
       if (els.quickApplyBtn) els.quickApplyBtn.disabled = false;
       renderHealth().catch(() => {});
@@ -1335,10 +1444,8 @@ function bindTopLevel() {
       return;
     } catch (error) {
       if (isAuthError(error)) showAuthOverlay(AUTH_LOGIN_HINT);
-      const stepLabel = step === "state" ? "state" :
-                        step === "outbounds" ? "outbounds" :
-                        step === "sing-box" ? "sing-box" :
-                        "routing";
+      const stepLabel = step === "catalog" ? "autoselect-catalog" : "runtime";
+      setApplyDockState(currentLang === "ru" ? "Ошибка применения" : "Apply failed", `${stepLabel}: ${error.message}`);
       toast.update(formatMessage(T.saveApplyFailedStepFmt, { msg: T.saveApplyFailed, step: stepLabel, err: error.message }), "error");
       pushDebug(`saveApply failed at step=${step}: ${error.message}`);
     } finally {
@@ -1357,6 +1464,107 @@ async function saveRemoteState() {
     body: JSON.stringify(state)
   });
   await parseResponseOrThrow(stateResponse);
+}
+
+function buildAutoSelectCatalog() {
+  const entries = [];
+  for (const profile of state?.profiles || []) {
+    for (const proxy of profile.proxies || []) {
+      try {
+        const isolated = { ...profile, activeProxyId: proxy.id };
+        const address = String(proxy.config?.address || "").trim();
+        const port = Number(proxy.config?.port || 0);
+        if (!address || !Number.isInteger(port) || port < 1 || port > 65535) continue;
+        entries.push({
+          id: String(proxy.id),
+          profileId: String(profile.id),
+          name: String(proxy.name || address).replace(/[\t\r\n]/g, " ").slice(0, 160),
+          address,
+          port,
+          protocol: String(proxy.config?.protocol || "vless").toLowerCase(),
+          outbounds: buildOutboundsDocument(isolated),
+          singbox: buildSingboxDocument(isolated)
+        });
+      } catch (error) {
+        pushDebug(`autoselect catalog skip proxy=${proxy?.id || "?"}: ${error.message}`);
+      }
+    }
+  }
+  return { version: 1, generatedAt: Date.now(), entries };
+}
+
+async function saveRemoteAutoSelectCatalog() {
+  const response = await fetchWithTimeout(AUTOSELECT_CATALOG_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(buildAutoSelectCatalog())
+  }, 30000);
+  await parseResponseOrThrow(response);
+}
+
+async function fetchAutoSelectStatus() {
+  const response = await fetchWithTimeout(AUTOSELECT_STATUS_URL, { cache: "no-store" }, 8000);
+  const payload = await parseResponseOrThrow(response);
+  autoSelectRuntime = {
+    phase: payload.phase || "idle",
+    message: payload.message || "",
+    results: Array.isArray(payload.results) ? payload.results : [],
+    bestId: payload.bestId || "",
+    bestLatencyMs: Number.isFinite(payload.bestLatencyMs) ? payload.bestLatencyMs : null,
+    currentId: payload.currentId || "",
+    currentLatencyMs: Number.isFinite(payload.currentLatencyMs) ? payload.currentLatencyMs : null,
+    updatedAt: Number(payload.updatedAt || 0)
+  };
+  const profile = getActiveProfile();
+  if (profile && autoSelectRuntime.currentId && (profile.proxies || []).some((p) => p.id === autoSelectRuntime.currentId)) {
+    if (profile.activeProxyId !== autoSelectRuntime.currentId) {
+      profile.activeProxyId = autoSelectRuntime.currentId;
+      persistState();
+    }
+  }
+  renderAutoSelectStatus();
+  if (profile) renderActiveProxyList(profile);
+  return autoSelectRuntime;
+}
+
+function startAutoSelectPolling() {
+  if (autoSelectTimer) clearInterval(autoSelectTimer);
+  fetchAutoSelectStatus().catch(() => {});
+  autoSelectTimer = setInterval(() => {
+    if (document.hidden) return;
+    fetchAutoSelectStatus().catch(() => {});
+  }, 15000);
+}
+
+async function startAutoSelectProbe() {
+  const response = await fetchWithTimeout(AUTOSELECT_RUN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: "{}"
+  }, 10000);
+  await parseResponseOrThrow(response);
+}
+
+async function runAutoSelectNow() {
+  await saveRemoteState();
+  await saveRemoteAutoSelectCatalog();
+  await startAutoSelectProbe();
+}
+
+async function saveRemoteRuntimeBundle() {
+  const profile = getActiveProfile();
+  if (!profile) throw new Error("active profile missing");
+  const response = await fetchWithTimeout(APPLY_RUNTIME_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
+      state,
+      outbounds: buildOutboundsDocument(profile),
+      singbox: buildSingboxDocument(profile),
+      routing: buildRoutingDocument(profile)
+    })
+  }, 90000);
+  return parseResponseOrThrow(response);
 }
 
 async function saveRemoteOutbounds() {
@@ -1381,7 +1589,7 @@ async function saveRemoteSingbox() {
       "Content-Type": "application/json; charset=utf-8"
     },
     body: JSON.stringify(buildSingboxDocument(profile))
-  });
+  }, 35000);
   await parseResponseOrThrow(response);
 }
 
@@ -1471,7 +1679,8 @@ async function renderHealth() {
     { name: "sing-box", svc: services.singbox, sev: services.singbox?.running ? "ok" : "critical", extras: [
       services.singbox?.listenUdp ? "udp 61221" : null
     ] },
-    { name: "self-heal", svc: services.selfheal, sev: services.selfheal?.running ? "ok" : "critical", extras: [] }
+    { name: "self-heal", svc: services.selfheal, sev: services.selfheal?.running ? "ok" : "critical", extras: [] },
+    { name: "auto-select", svc: services.autoselect, sev: services.autoselect?.running ? "ok" : "warn", extras: [] }
   ];
 
   const badgesHtml = badges.map((item) => {
@@ -1532,7 +1741,28 @@ async function renderHealth() {
     if (v === "ok" || v === "fail" || v === "na") return v;
     return "fail";
   };
+  if (els.policyTrafficHint) {
+    const captureStatus = normStatus(checks.tcpCaptureHook);
+    const capturePackets = Number(checks.tcpCapturePackets || 0);
+    els.policyTrafficHint.classList.toggle("runtime-warning", captureStatus !== "ok" || capturePackets === 0);
+    els.policyTrafficHint.classList.toggle("runtime-ok", captureStatus === "ok" && capturePackets > 0);
+    if (captureStatus !== "ok") {
+      els.policyTrafficHint.textContent = currentLang === "ru"
+        ? "Перехват xkeen сейчас НЕ установлен. Нажми «Сохранить и применить» или «Рестарт runtime»; если ошибка останется — проверь политику xkeen в Keenetic."
+        : "The xkeen capture hook is NOT installed. Click Save and apply or Repair runtime; if it still fails, check the xkeen policy in Keenetic.";
+    } else if (capturePackets === 0) {
+      els.policyTrafficHint.textContent = currentLang === "ru"
+        ? "Хук xkeen установлен, но через него пока прошло 0 TCP-пакетов. Назначь тестовое устройство политике xkeen в Keenetic → «Приоритеты подключений» и открой 2ip.io."
+        : "The xkeen hook is installed but has seen 0 TCP packets. Assign the test device to the xkeen policy in Keenetic → Connection priorities and open 2ip.io.";
+    } else {
+      els.policyTrafficHint.textContent = currentLang === "ru"
+        ? `Перехват xkeen работает: ${capturePackets} TCP-пакетов прошло через AntiGoblin. routing.json применяется к устройствам политики xkeen.`
+        : `xkeen capture is working: ${capturePackets} TCP packets have passed through AntiGoblin. routing.json applies to devices assigned to the xkeen policy.`;
+    }
+  }
+
   const checkRows = [
+    { label: T.healthCheckTcpCapture, status: normStatus(checks.tcpCaptureHook), extra: formatMessage(T.healthCapturePacketsFmt || "{n}", { n: checks.tcpCapturePackets || 0 }) },
     { label: T.healthCheckTproxy, status: normStatus(checks.tproxyRuleAtEnd) },
     { label: T.healthCheckIpRule, status: normStatus(checks.ipRuleMasked) },
     { label: T.healthCheckUdpIpset, status: normStatus(checks.udpIpsetExists),
@@ -1773,7 +2003,8 @@ async function renderStackInfo() {
       title: T.stackVpnSection || "VPN",
       rows: [
         [T.stackVpnHost || "сервер", vpn.host ? `${vpn.host}:${vpn.port}` : "—"],
-        [T.stackVpnExitIp || "exit IP", vpn.exitIp || "—"],
+        [T.stackVpnEndpointIp || "IP сервера", vpn.endpointIp || "—"],
+        [T.stackVpnExitIp || "VPN exit IP", vpn.exitIp || "—"],
         [T.stackVpnSni || "Reality SNI", vpn.sni || "—"]
       ]
     },
@@ -2573,6 +2804,7 @@ function renderProxiesPanel(profile) {
   renderSubscriptionsList(profile);
   renderManualKeysList(profile);
   renderActiveProxyList(profile);
+  renderAutoSelectControls(profile);
   renderQuickStart(profile);
 }
 
@@ -2711,6 +2943,7 @@ function renderManualKeysList(profile) {
         <div class="card-meta">
           <span class="card-badge">${escapeHtml(securityBadge(p.config))}</span>
           <span>${escapeHtml(p.config.address)}:${p.config.port}</span>
+          ${latencyHtml}
         </div>
       </div>
       <div class="card-actions">
@@ -2719,6 +2952,50 @@ function renderManualKeysList(profile) {
       </div>
     `;
     els.manualKeysList.appendChild(li);
+  }
+}
+
+function renderAutoSelectControls(profile) {
+  if (!profile) return;
+  profile.autoSelect = normalizeAutoSelectConfig(profile.autoSelect);
+  if (els.autoSelectEnabled) els.autoSelectEnabled.checked = profile.autoSelect.enabled;
+  if (els.autoSelectInterval) els.autoSelectInterval.value = String(profile.autoSelect.intervalSec);
+  if (els.autoSelectThreshold) els.autoSelectThreshold.value = String(profile.autoSelect.minImprovementMs);
+  renderAutoSelectStatus();
+}
+
+function latencyClass(ms) {
+  if (!Number.isFinite(ms)) return "bad";
+  if (ms <= 80) return "good";
+  if (ms <= 180) return "mid";
+  return "bad";
+}
+
+function renderAutoSelectStatus() {
+  if (!els.autoSelectStatus) return;
+  const r = autoSelectRuntime || {};
+  els.autoSelectStatus.className = "auto-select-status";
+  if (r.phase === "probing") {
+    els.autoSelectStatus.classList.add("probing");
+    els.autoSelectStatus.textContent = T.autoSelectProbing || "Checking…";
+    return;
+  }
+  if (!r.updatedAt || !Array.isArray(r.results) || r.results.length === 0) {
+    els.autoSelectStatus.textContent = T.autoSelectNever || "Latency has not been measured yet.";
+    return;
+  }
+  if (r.phase === "error") els.autoSelectStatus.classList.add("error");
+  else els.autoSelectStatus.classList.add("ok");
+  const profile = getActiveProfile();
+  const byId = new Map((profile?.proxies || []).map((p) => [p.id, p.name]));
+  if (r.bestId && Number.isFinite(r.bestLatencyMs)) {
+    els.autoSelectStatus.textContent = formatMessage(T.autoSelectBestFmt || "Best: {best} · {ms} ms. {message}", {
+      best: byId.get(r.bestId) || r.bestId,
+      ms: Math.round(r.bestLatencyMs),
+      message: r.message || ""
+    });
+  } else {
+    els.autoSelectStatus.textContent = r.message || T.autoSelectOffline || "no response";
   }
 }
 
@@ -2753,6 +3030,12 @@ function renderActiveProxyList(profile) {
   for (const p of visibleProxies) {
     const sub = (profile.subscriptions || []).find((s) => s.id === p.source);
     const srcLabel = sub ? sub.name : (T.manualKeySrc || "manual");
+    const latency = (autoSelectRuntime.results || []).find((x) => x.id === p.id);
+    const latencyHtml = latency
+      ? (latency.ok && Number.isFinite(latency.latencyMs)
+          ? `<span class="latency-chip ${latencyClass(latency.latencyMs)} ${p.id === autoSelectRuntime.bestId ? "best" : ""}">${Math.round(latency.latencyMs)} ms</span>`
+          : `<span class="latency-chip bad">${escapeHtml(T.autoSelectOffline || "offline")}</span>`)
+      : `<span class="latency-chip">…</span>`;
     const li = document.createElement("li");
     li.className = "active-row" + (p.id === activeId ? " selected" : "");
     li.dataset.proxyId = p.id;
@@ -3491,6 +3774,40 @@ function extractMuxConfig(doc) {
   const outbound = (doc?.outbounds || []).find((item) => item.tag === "vless-reality");
   if (!outbound) return null;
   return normalizeMuxConfig(outbound.mux || {});
+}
+
+function createDefaultAutoSelectConfig() {
+  return {
+    version: 2,
+    enabled: true,
+    intervalSec: 300,
+    minImprovementMs: 0,
+    probeTimeoutSec: 2
+  };
+}
+
+function normalizeAutoSelectConfig(config) {
+  const src = config && typeof config === "object" ? config : {};
+  const allowedIntervals = new Set([60, 120, 300, 600, 1800]);
+  let intervalSec = Number(src.intervalSec);
+  if (!allowedIntervals.has(intervalSec)) intervalSec = 300;
+  // v1 shipped with an 8 ms default hysteresis. v2 migrates existing
+  // profiles once to strict "lowest measured latency" (0 ms), while keeping
+  // any value the user sets afterwards.
+  let minImprovementMs = Number(src.minImprovementMs);
+  if (Number(src.version || 1) < 2) minImprovementMs = 0;
+  if (!Number.isFinite(minImprovementMs)) minImprovementMs = 0;
+  minImprovementMs = Math.max(0, Math.min(500, Math.round(minImprovementMs)));
+  let probeTimeoutSec = Number(src.probeTimeoutSec);
+  if (!Number.isFinite(probeTimeoutSec)) probeTimeoutSec = 2;
+  probeTimeoutSec = Math.max(1, Math.min(5, Math.round(probeTimeoutSec)));
+  return {
+    version: 2,
+    enabled: src.enabled !== false,
+    intervalSec,
+    minImprovementMs,
+    probeTimeoutSec
+  };
 }
 
 function createDefaultProxyConfig() {
@@ -4594,6 +4911,7 @@ function normalizeState(input) {
         fallbackOutbound: input.fallbackOutbound || "direct",
         proxyConfig: input.proxyConfig,
         muxConfig: input.muxConfig,
+        autoSelect: input.autoSelect,
         groups: input.groups
       })
     ]
@@ -4627,6 +4945,7 @@ function createEmptyProfile(name = T.defaultProfileName) {
     proxies: [],
     subscriptions: [],
     activeProxyId: null,
+    autoSelect: createDefaultAutoSelectConfig(),
     groups: [createEmptyGroup()]
   };
 }
@@ -4735,6 +5054,7 @@ function normalizeProfile(profile) {
     proxies,
     subscriptions,
     activeProxyId,
+    autoSelect: normalizeAutoSelectConfig(profile.autoSelect),
     groups: groups.length ? groups : [createEmptyGroup()]
   };
 }
@@ -5043,6 +5363,18 @@ function applyTranslations() {
       option.textContent = optionLabels[option.value] || option.value;
     }
   }
+  if (els.policyTrafficHint) els.policyTrafficHint.textContent = T.policyTrafficHint || "";
+  if (els.autoSelectLabel) els.autoSelectLabel.textContent = T.autoSelectLabel;
+  if (els.autoSelectIntervalLabel) els.autoSelectIntervalLabel.textContent = T.autoSelectIntervalLabel;
+  if (els.autoSelectThresholdLabel) els.autoSelectThresholdLabel.textContent = T.autoSelectThresholdLabel;
+  if (els.probeAllBtn) els.probeAllBtn.textContent = T.autoSelectProbeAll;
+  if (els.autoSelectInterval) {
+    const labels = currentLang === "ru"
+      ? {60:"1 мин",120:"2 мин",300:"5 мин",600:"10 мин",1800:"30 мин"}
+      : {60:"1 min",120:"2 min",300:"5 min",600:"10 min",1800:"30 min"};
+    for (const option of els.autoSelectInterval.options) option.textContent = labels[option.value] || option.value;
+  }
+  renderAutoSelectStatus();
   if (els.previewKicker) els.previewKicker.textContent = T.previewKicker;
   if (els.previewTitle) els.previewTitle.textContent = T.previewTitle;
   if (els.groupsKicker) els.groupsKicker.textContent = T.groupsKicker;

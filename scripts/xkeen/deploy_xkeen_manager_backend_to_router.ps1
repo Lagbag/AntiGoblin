@@ -6,6 +6,7 @@ param(
   [string]$RemoteRuntimeDir = "/opt/share/xkeen-manager/runtime",
   [string]$RemoteSelfhealLoop = "/opt/share/xkeen-manager/api/xkeen-selfheal-loop.sh",
   [string]$RemoteSelfhealInit = "/opt/etc/init.d/S25antigoblin-selfheal",
+  [string]$RemoteAutoSelectInit = "/opt/etc/init.d/S25antigoblin-autoselect",
   [string]$RemoteSingboxInit = "/opt/etc/init.d/S24antigoblin-singbox",
   [string]$RemoteSysctlInit = "/opt/etc/init.d/S20antigoblin-sysctl",
   [string]$RemoteInitScript = "/opt/etc/init.d/S26antigoblin",
@@ -34,10 +35,12 @@ $sshHelper = Join-Path $PSScriptRoot 'router_ssh.py'
 $localApi = Join-Path $repoRoot 'ui\xkeen-manager\backend\routing.cgi'
 $localSelfHeal = Join-Path $repoRoot 'ui\xkeen-manager\backend\xkeen-selfheal.sh'
 $localRuntime = Join-Path $repoRoot 'ui\xkeen-manager\backend\xkeen-runtime.sh'
+$localAutoSelect = Join-Path $repoRoot 'ui\xkeen-manager\backend\xkeen-autoselect.sh'
 $localXrayRelay = Join-Path $repoRoot 'configs\xkeen\02_relay.sample.json'
 $localSingboxConfig = Join-Path $repoRoot 'configs\xkeen\sing-box-xkeen.sample.json'
 $localSelfhealLoop = Join-Path $repoRoot 'scripts\xkeen\antigoblin-selfheal-loop.sh'
 $localSelfhealInit = Join-Path $repoRoot 'scripts\xkeen\antigoblin-selfheal.initd.sh'
+$localAutoSelectInit = Join-Path $repoRoot 'scripts\xkeen\antigoblin-autoselect.initd.sh'
 $localSingboxInit = Join-Path $repoRoot 'scripts\xkeen\antigoblin-singbox.initd.sh'
 $localSysctlInit = Join-Path $repoRoot 'scripts\xkeen\antigoblin-sysctl.initd.sh'
 $localInitScript = Join-Path $repoRoot 'scripts\xkeen\antigoblin.initd.sh'
@@ -98,6 +101,9 @@ if (-not (Test-Path $localSelfHeal)) {
 if (-not (Test-Path $localRuntime)) {
   throw "Missing runtime file: $localRuntime"
 }
+if (-not (Test-Path $localAutoSelect)) {
+  throw "Missing auto-select file: $localAutoSelect"
+}
 if (-not (Test-Path $localXrayRelay)) {
   throw "Missing xray relay config: $localXrayRelay"
 }
@@ -109,6 +115,9 @@ if (-not (Test-Path $localSelfhealLoop)) {
 }
 if (-not (Test-Path $localSelfhealInit)) {
   throw "Missing self-heal init script: $localSelfhealInit"
+}
+if (-not (Test-Path $localAutoSelectInit)) {
+  throw "Missing auto-select init script: $localAutoSelectInit"
 }
 if (-not (Test-Path $localSingboxInit)) {
   throw "Missing sing-box init script: $localSingboxInit"
@@ -144,6 +153,7 @@ Invoke-RouterCommand -Command "opkg install tar gzip wget ca-bundle >/dev/null 2
 Send-RemoteFile -LocalPath $localApi -RemotePath "$RemoteApiDir/routing.cgi"
 Send-RemoteFile -LocalPath $localSelfHeal -RemotePath "$RemoteApiDir/xkeen-selfheal.sh"
 Send-RemoteFile -LocalPath $localRuntime -RemotePath "$RemoteApiDir/xkeen-runtime.sh"
+Send-RemoteFile -LocalPath $localAutoSelect -RemotePath "$RemoteApiDir/xkeen-autoselect.sh"
 # 02_relay.json и sing-box/xkeen.json — runtime-сгенерируемые файлы
 # (перезаписываются backend'ом из state.json при каждом Apply). Sample-файл
 # трогаем только если файла ещё нет на роутере (первая установка).
@@ -151,6 +161,7 @@ Send-RemoteFile -LocalPath $localXrayRelay -RemotePath "/opt/etc/xray/configs/02
 Send-RemoteFile -LocalPath $localSingboxConfig -RemotePath "/opt/etc/sing-box/xkeen.json" -Mode '644' -IfMissing
 Send-RemoteFile -LocalPath $localSelfhealLoop -RemotePath $RemoteSelfhealLoop
 Send-RemoteFile -LocalPath $localSelfhealInit -RemotePath $RemoteSelfhealInit
+Send-RemoteFile -LocalPath $localAutoSelectInit -RemotePath $RemoteAutoSelectInit
 Send-RemoteFile -LocalPath $localSingboxInit -RemotePath $RemoteSingboxInit
 Send-RemoteFile -LocalPath $localSysctlInit -RemotePath $RemoteSysctlInit
 Send-RemoteFile -LocalPath $localInitScript -RemotePath $RemoteInitScript
@@ -238,4 +249,4 @@ if [ -f "$XRAY_INIT" ] && grep -q 'ARGS="run -confdir /opt/etc/xray"' "$XRAY_INI
 fi
 '@
 Invoke-RouterCommand -Command $patchXrayInit
-Invoke-RouterCommand -Command "chmod 755 '$RemoteSelfhealLoop' '$RemoteSelfhealInit' '$RemoteSingboxInit' '$RemoteSysctlInit' '$RemoteInitScript' '$RemoteCronScript' '$RemoteUsbHook' '$RemoteNetfilterHook' && '$RemoteSysctlInit' start >/dev/null 2>&1 || true && '$RemoteSingboxInit' restart >/dev/null 2>&1 || true && '$RemoteSelfhealInit' restart >/dev/null 2>&1 || true && '$RemoteInitScript' restart >/dev/null 2>&1 || true"
+Invoke-RouterCommand -Command "chmod 755 '$RemoteSelfhealLoop' '$RemoteSelfhealInit' '$RemoteAutoSelectInit' '$RemoteSingboxInit' '$RemoteSysctlInit' '$RemoteInitScript' '$RemoteCronScript' '$RemoteUsbHook' '$RemoteNetfilterHook' '$RemoteApiDir/xkeen-autoselect.sh' && '$RemoteSysctlInit' start >/dev/null 2>&1 || true && '$RemoteSingboxInit' restart >/dev/null 2>&1 || true && '$RemoteSelfhealInit' restart >/dev/null 2>&1 || true && '$RemoteAutoSelectInit' restart >/dev/null 2>&1 || true && '$RemoteInitScript' restart >/dev/null 2>&1 || true"

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AntiGoblin</title>
-  <link rel="stylesheet" href="./styles.css?v=120">
+  <link rel="stylesheet" href="./styles.css?v=141">
 </head>
 <body>
     <div id="authOverlay" class="auth-overlay" hidden>
@@ -95,6 +95,10 @@
           <span class="setup-step-state">→</span>
         </a>
       </div>
+      <div id="policyTrafficHint" class="setup-policy-note">
+        <strong>Важно:</strong> routing.json применяется только к трафику устройств, назначенных политике Keenetic <code>xkeen</code>.
+        Если счётчик перехвата в «Диагностике» остаётся 0 — назначь устройство в «Приоритеты подключений».
+      </div>
     </section>
 
     <main class="layout">
@@ -172,6 +176,30 @@
               <div class="active-key-toolbar">
                 <input id="activeProxyFilter" type="search" autocomplete="off" placeholder="Поиск сервера…">
                 <span id="activeProxyCount" class="active-proxy-count"></span>
+              </div>
+              <div class="auto-select-box">
+                <label class="toggle auto-select-toggle">
+                  <input id="autoSelectEnabled" type="checkbox">
+                  <span id="autoSelectLabel">Автоматически выбирать сервер с минимальным пингом</span>
+                </label>
+                <div class="auto-select-controls">
+                  <label>
+                    <span id="autoSelectIntervalLabel">Проверять</span>
+                    <select id="autoSelectInterval">
+                      <option value="60">раз в 1 минуту</option>
+                      <option value="120">раз в 2 минуты</option>
+                      <option value="300">раз в 5 минут</option>
+                      <option value="600">раз в 10 минут</option>
+                      <option value="1800">раз в 30 минут</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span id="autoSelectThresholdLabel">Переключать, если быстрее на</span>
+                    <div class="input-suffix"><input id="autoSelectThreshold" type="number" min="0" max="500" step="1"><span>ms</span></div>
+                  </label>
+                  <button id="probeAllBtn" type="button">Проверить все и выбрать лучший</button>
+                </div>
+                <div id="autoSelectStatus" class="auto-select-status" aria-live="polite">Пинги ещё не измерялись.</div>
               </div>
               <ul id="activeProxyList" class="active-proxy-list" aria-live="polite"></ul>
               <div id="proxyProbeStatus" class="probe-status" hidden></div>
@@ -319,6 +347,7 @@
                 <option value="xray">xray (manual)</option>
                 <option value="singbox">sing-box</option>
                 <option value="selfheal">self-heal</option>
+                <option value="autoselect">auto-select</option>
                 <option value="health">health</option>
                 <option value="sysctl">sysctl</option>
                 <option value="fd-dump">xray fd-dump (latest)</option>
@@ -368,13 +397,13 @@
 
     <div class="action-dock" role="region" aria-label="Применение настроек">
       <div class="action-dock-copy">
-        <strong id="actionDockTitle">Готово к применению?</strong>
-        <span id="actionDockHint">Сохраняет профиль и перезапускает VPN-маршрутизацию.</span>
+        <strong id="actionDockTitle">Применить изменения</strong>
+        <span id="actionDockHint">Сохраняет профиль, проверяет конфиги и перезапускает VPN с таймаутами.</span>
       </div>
       <button id="quickApplyBtn" type="button" class="primary">Сохранить и применить</button>
     </div>
   </div>
 
-  <script charset="utf-8" src="./app.js?v=120"></script>
+  <script charset="utf-8" src="./app.js?v=141"></script>
 </body>
 </html>

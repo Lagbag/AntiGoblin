@@ -101,6 +101,7 @@ backup_existing_install() {
   mkdir -p "$dst/xray" "$dst/sing-box"
 
   [ -f /opt/share/xkeen-manager/xkeen-ui-state.json ] && cp /opt/share/xkeen-manager/xkeen-ui-state.json "$dst/xkeen-ui-state.json" || true
+  [ -f /opt/share/xkeen-manager/autoselect-catalog.json ] && cp /opt/share/xkeen-manager/autoselect-catalog.json "$dst/autoselect-catalog.json" || true
   [ -f /opt/etc/antigoblin.conf ] && cp /opt/etc/antigoblin.conf "$dst/antigoblin.conf" || true
   [ -f /opt/share/xkeen-manager/VERSION ] && cp /opt/share/xkeen-manager/VERSION "$dst/VERSION.previous" || true
   for f in /opt/etc/xray/configs/*.json; do
@@ -386,7 +387,8 @@ mkdirs() {
   # — the error.log entry that reproduces their crash is often the whole
   # reason they're re-running install.sh.
   touch /opt/var/log/xray/access.log /opt/var/log/xray/error.log \
-        /opt/var/log/xkeen-selfheal.log /opt/var/log/xkeen-health.log
+        /opt/var/log/xkeen-selfheal.log /opt/var/log/xkeen-health.log \
+        /opt/var/log/antigoblin-autoselect.log
 }
 
 seed_file() {
@@ -488,12 +490,14 @@ deploy_sources() {
   deploy_file "$BACKEND/routing.cgi"      /opt/share/xkeen-manager/api/routing.cgi
   deploy_file "$BACKEND/xkeen-selfheal.sh" /opt/share/xkeen-manager/api/xkeen-selfheal.sh
   deploy_file "$BACKEND/xkeen-runtime.sh"  /opt/share/xkeen-manager/api/xkeen-runtime.sh
+  deploy_file "$BACKEND/xkeen-autoselect.sh" /opt/share/xkeen-manager/api/xkeen-autoselect.sh
 
   log "Deploying init and watchdog scripts"
   deploy_file "$SCRIPTS/antigoblin-selfheal-loop.sh" /opt/share/xkeen-manager/api/xkeen-selfheal-loop.sh
   deploy_file "$SCRIPTS/antigoblin-sysctl.initd.sh"  /opt/etc/init.d/S20antigoblin-sysctl
   deploy_file "$SCRIPTS/antigoblin-singbox.initd.sh" /opt/etc/init.d/S24antigoblin-singbox
   deploy_file "$SCRIPTS/antigoblin-selfheal.initd.sh" /opt/etc/init.d/S25antigoblin-selfheal
+  deploy_file "$SCRIPTS/antigoblin-autoselect.initd.sh" /opt/etc/init.d/S25antigoblin-autoselect
   deploy_file "$SCRIPTS/antigoblin.initd.sh"          /opt/etc/init.d/S26antigoblin
   deploy_file "$SCRIPTS/antigoblin-selfheal.cron.sh"  /opt/etc/cron.1min/50-antigoblin-selfheal
   # remount-hook: install into usb.d only. Historically also in fs.d,
@@ -636,6 +640,9 @@ start_services() {
 
   log "Forcing one self-heal pass"
   /opt/share/xkeen-manager/api/xkeen-selfheal.sh --force >/dev/null 2>&1 || true
+
+  log "Starting latency auto-selector"
+  /opt/etc/init.d/S25antigoblin-autoselect restart >/dev/null 2>&1 || true
 
   log "Starting AntiGoblin UI on :$UI_PORT"
   /opt/etc/init.d/S26antigoblin restart >/dev/null 2>&1 || true
