@@ -499,10 +499,14 @@ emit_health() {
 
   XRAY_TCP_OK=0
   netstat -lnpt 2>/dev/null | grep -q ':61219 ' && XRAY_TCP_OK=1
+  XRAY_SOCKS_OK=0
+  netstat -lnpt 2>/dev/null | grep -q ':61080 ' && XRAY_SOCKS_OK=1
   XRAY_RELAY_OK=0
   netstat -lnpu 2>/dev/null | grep -q '127.0.0.1:62640 ' && XRAY_RELAY_OK=1
   SB_LISTEN_OK=0
   netstat -lnpu 2>/dev/null | grep -q ':61221 ' && SB_LISTEN_OK=1
+  SB_BRIDGE_OK=0
+  netstat -lnpt 2>/dev/null | grep -q '127.0.0.1:61225 ' && SB_BRIDGE_OK=1
 
   # UDP route is only required when the active profile has at least one
   # non-bypass/non-direct group enabled. If not, the ipset, the mangle
@@ -585,8 +589,32 @@ emit_health() {
   case "$CT_COUNT" in ''|*[!0-9]*) CT_COUNT=0 ;; esac
   case "$CT_MAX"   in ''|*[!0-9]*) CT_MAX=0 ;; esac
 
-  # VPN socket metrics
+  # VPN socket metrics + the exact runtime endpoint currently applied.
+  # The UI keeps "selected" and "applied" separate so clicking a server does
+  # not misleadingly look live before Save & Apply has actually restarted the
+  # engines. Never expose credentials here.
   load_vpn_endpoint
+  STATE_ACTIVE_ID=""
+  STATE_ACTIVE_NAME=""
+  STATE_ACTIVE_PROTOCOL=""
+  STATE_ACTIVE_ADDRESS=""
+  STATE_ACTIVE_PORT=0
+  if [ -f "$STATE_PATH" ] && [ -x /opt/bin/jq ]; then
+    STATE_ACTIVE_ID="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) | .activeProxyId // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    STATE_ACTIVE_NAME="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .name // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    STATE_ACTIVE_PROTOCOL="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .config.protocol // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    STATE_ACTIVE_ADDRESS="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .config.address // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    STATE_ACTIVE_PORT="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .config.port // 0' "$STATE_PATH" 2>/dev/null | head -1)"
+  fi
+  case "$STATE_ACTIVE_PORT" in ''|*[!0-9]*) STATE_ACTIVE_PORT=0 ;; esac
+
+  APPLIED_ENGINE="$VPN_PROC"
+  APPLIED_PROTOCOL=""
+  if [ "$VPN_PROC" = "sing-box" ] && [ -f /opt/etc/sing-box/xkeen.json ]; then
+    APPLIED_PROTOCOL="$(/opt/bin/jq -r '(.outbounds[]? | select(.tag=="proxy") | .type) // (.endpoints[]? | select(.tag=="proxy") | .type) // ""' /opt/etc/sing-box/xkeen.json 2>/dev/null | head -1)"
+  elif [ -f "$OUTBOUNDS_PATH" ]; then
+    APPLIED_PROTOCOL="$(/opt/bin/jq -r '.outbounds[]? | select(.tag=="vless-reality") | .protocol // ""' "$OUTBOUNDS_PATH" 2>/dev/null | head -1)"
+  fi
   VPN_IP=""
   VPN_ESTABLISHED=0
   VPN_FIN_WAIT=0
@@ -652,10 +680,12 @@ emit_health() {
     --argjson xray_run "$XRAY_RUN" \
     --arg xray_pid "${XRAY_PID:-}" \
     --argjson xray_tcp "$XRAY_TCP_OK" \
+    --argjson xray_socks "$XRAY_SOCKS_OK" \
     --argjson xray_relay "$XRAY_RELAY_OK" \
     --argjson sb_run "$SB_RUN" \
     --arg sb_pid "${SB_PID:-}" \
     --argjson sb_listen "$SB_LISTEN_OK" \
+    --argjson sb_bridge "$SB_BRIDGE_OK" \
     --argjson sh_run "$SH_RUN" \
     --arg sh_pid "${SELFHEAL_PID:-}" \
     --argjson as_run "$AS_RUN" \
@@ -682,13 +712,20 @@ emit_health() {
     --arg vpn_host "${VPN_HOST:-}" \
     --argjson vpn_port "${VPN_PORT:-0}" \
     --arg vpn_process "${VPN_PROC:-xray}" \
+    --arg state_active_id "${STATE_ACTIVE_ID:-}" \
+    --arg state_active_name "${STATE_ACTIVE_NAME:-}" \
+    --arg state_active_protocol "${STATE_ACTIVE_PROTOCOL:-}" \
+    --arg state_active_address "${STATE_ACTIVE_ADDRESS:-}" \
+    --argjson state_active_port "${STATE_ACTIVE_PORT:-0}" \
+    --arg applied_protocol "${APPLIED_PROTOCOL:-}" \
+    --arg applied_engine "${APPLIED_ENGINE:-}" \
     --arg health_status "$HEALTH_STATUS" \
     '{
       ok: true,
       healthStatus: $health_status,
       services: {
-        xray:    { running: $xray_run, pid: $xray_pid, listenTcp: ($xray_tcp == 1), listenRelayUdp: ($xray_relay == 1) },
-        singbox: { running: $sb_run, pid: $sb_pid, listenUdp: ($sb_listen == 1) },
+        xray:    { running: $xray_run, pid: $xray_pid, listenTcp: ($xray_tcp == 1), listenSocks: ($xray_socks == 1), listenRelayUdp: ($xray_relay == 1) },
+        singbox: { running: $sb_run, pid: $sb_pid, listenUdp: ($sb_listen == 1), listenBridge: ($sb_bridge == 1) },
         selfheal:{ running: $sh_run, pid: $sh_pid },
         autoselect:{ running: $as_run, pid: $as_pid }
       },
@@ -705,6 +742,10 @@ emit_health() {
       ipsetSize: { udpRoute: $udp_ipset_size, bypass: $bypass_ipset_size },
       xrayFd: { count: $xray_fd, limit: $xray_fd_limit },
       conntrack: { count: $ct_count, max: $ct_max },
+      runtime: {
+        stateActive: { id: $state_active_id, name: $state_active_name, protocol: $state_active_protocol, address: $state_active_address, port: $state_active_port },
+        applied: { protocol: $applied_protocol, engine: $applied_engine, host: $vpn_host, port: $vpn_port }
+      },
       vpnTunnel: {
         host: $vpn_host,
         port: $vpn_port,
@@ -1120,7 +1161,7 @@ fetch_subscription() {
     /opt/bin/curl -fsSL \
       --max-time 10 \
       --max-filesize 262144 \
-      -A 'AntiGoblin/1.0' \
+      -A 'sing-box' \
       -o "$TMP_FETCH" \
       "$URL" 2>"$TMP_FETCH_ERR"
     RC=$?
@@ -1128,6 +1169,7 @@ fetch_subscription() {
     /opt/bin/wget -q \
       --timeout=10 \
       --tries=1 \
+      --header="User-Agent: sing-box" \
       -O "$TMP_FETCH" \
       "$URL" 2>"$TMP_FETCH_ERR"
     RC=$?
@@ -1160,7 +1202,7 @@ fetch_subscription() {
     exit 0
   fi
 
-  json_ok "{\"ok\":true,\"size\":${SIZE},\"fetcher\":\"${FETCHER}\",\"raw\":\"${ENCODED}\"}"
+  json_ok "{\"ok\":true,\"size\":${SIZE},\"fetcher\":\"${FETCHER}\",\"userAgent\":\"sing-box\",\"raw\":\"${ENCODED}\"}"
   rm -f "$TMP_BODY" "$TMP_FETCH" "$TMP_FETCH_ERR"
   exit 0
 }
@@ -1324,7 +1366,7 @@ case "$REQUEST_METHOD" in
     fi
 
     case "$KIND" in
-      probe|subscription-fetch|autoselect-run|autoselect-catalog)
+      probe|egress-check|subscription-fetch|autoselect-run|autoselect-catalog)
         ;;
       state|apply-runtime)
         # Interactive state/apply calls must fail fast if self-heal currently
@@ -1531,11 +1573,20 @@ case "$REQUEST_METHOD" in
           # diagnostics. Do not expose credentials; only classify the runtime
           # error already written by sing-box to tmpfs.
           SB_RT_LOG="/tmp/antigoblin-singbox-runtime.log"
-          if [ -f "$SB_RT_LOG" ]; then
-            if tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
+          ACTIVE_SB_TYPE=""
+          if [ -f "$SINGBOX_PATH" ]; then
+            ACTIVE_SB_TYPE="$(/opt/bin/jq -r '(.outbounds[]? | select(.tag=="proxy") | .type) // (.endpoints[]? | select(.tag=="proxy") | .type) // ""' "$SINGBOX_PATH" 2>/dev/null | head -1)"
+          fi
+          # Do not classify stale sing-box lines when the currently applied
+          # server is VLESS/VMess on Xray. Old HY2 AUTH 404 lines remain in the
+          # RAM log after a later Xray switch and previously made diagnostics
+          # lie about the active protocol.
+          if [ -n "$ACTIVE_SB_TYPE" ] && [ -f "$SB_RT_LOG" ]; then
+            if [ "$ACTIVE_SB_TYPE" = "hysteria2" ] && tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
               EGRESS_STATUS="hy2-auth-404"
-              EGRESS_WARNING="Hysteria2 server rejected the client (HTTP 404). runtime4 already uses 20/100 Mbps compatibility bandwidth when the URI has no up/down values; if this still happens, refresh/re-import the key because the auth password or endpoint is wrong, or the server auth is misconfigured."
-            elif tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'timeout: no recent network activity|handshake timeout|i/o timeout'; then
+              EGRESS_WARNING="Hysteria2 server rejected authentication (HTTP 404). The local xkeen/Xray/sing-box path is alive; refresh/re-import the subscription or choose another server because this endpoint does not accept the current HY2 auth."
+            elif case "$ACTIVE_SB_TYPE" in hysteria|hysteria2|tuic|wireguard) true ;; *) false ;; esac \
+                 && tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'timeout: no recent network activity|handshake timeout|i/o timeout'; then
               EGRESS_STATUS="quic-timeout"
               EGRESS_WARNING="VPN endpoint did not finish the QUIC handshake. Check UDP reachability, server port/port-hopping and obfs settings."
             elif tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'certificate|x509|tls: failed|CRYPTO_ERROR'; then
@@ -1646,6 +1697,60 @@ case "$REQUEST_METHOD" in
       else
         json_err "tcp connect failed"
       fi
+      rm -f "$TMP_BODY"
+      exit 0
+    fi
+
+    if [ "$KIND" = "egress-check" ]; then
+      TUNNEL_OK=false
+      TUNNEL_STATUS="proxy-unreachable"
+      TUNNEL_MESSAGE="HTTPS through local SOCKS 127.0.0.1:61080 failed"
+      HTTP_CODE="000"
+      if [ -x /opt/bin/curl ]; then
+        HTTP_CODE="$(/opt/bin/curl -4 -sS -o /dev/null --socks5-hostname 127.0.0.1:61080 --connect-timeout 4 --max-time 10 -w '%{http_code}' https://example.com 2>/dev/null || true)"
+        case "$HTTP_CODE" in
+          2??|3??) TUNNEL_OK=true; TUNNEL_STATUS="ok"; TUNNEL_MESSAGE="VPN HTTPS egress works" ;;
+        esac
+      fi
+      PROXY_IP=""
+      DIRECT_IP=""
+      if [ "$TUNNEL_OK" = "true" ]; then
+        PROXY_IP="$(probe_proxy_exit_ip 1)"
+        DIRECT_IP="$(probe_direct_exit_ip 1)"
+        if [ -n "$PROXY_IP" ] && [ -n "$DIRECT_IP" ] && [ "$PROXY_IP" = "$DIRECT_IP" ]; then
+          TUNNEL_OK=false
+          TUNNEL_STATUS="same-as-direct"
+          TUNNEL_MESSAGE="SOCKS HTTPS works, but VPN public IP equals direct WAN IP"
+        fi
+      else
+        SB_RT_LOG="/tmp/antigoblin-singbox-runtime.log"
+        ACTIVE_SB_TYPE=""
+        if [ -f "$SINGBOX_PATH" ]; then
+          ACTIVE_SB_TYPE="$(/opt/bin/jq -r '(.outbounds[]? | select(.tag=="proxy") | .type) // (.endpoints[]? | select(.tag=="proxy") | .type) // ""' "$SINGBOX_PATH" 2>/dev/null | head -1)"
+        fi
+        if [ -n "$ACTIVE_SB_TYPE" ] && [ -f "$SB_RT_LOG" ]; then
+          if [ "$ACTIVE_SB_TYPE" = "hysteria2" ] && tail -n 80 "$SB_RT_LOG" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
+            TUNNEL_STATUS="hy2-auth-404"
+            TUNNEL_MESSAGE="Hysteria2 server rejected authentication (HTTP 404)"
+          elif case "$ACTIVE_SB_TYPE" in hysteria|hysteria2|tuic|wireguard) true ;; *) false ;; esac \
+               && tail -n 80 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'timeout: no recent network activity|handshake timeout|i/o timeout'; then
+            TUNNEL_STATUS="quic-timeout"
+            TUNNEL_MESSAGE="QUIC handshake timed out"
+          elif tail -n 80 "$SB_RT_LOG" 2>/dev/null | grep -Eqi 'certificate|x509|tls: failed|CRYPTO_ERROR'; then
+            TUNNEL_STATUS="tls-error"
+            TUNNEL_MESSAGE="TLS/QUIC handshake failed"
+          fi
+        fi
+      fi
+      RESULT="$(/opt/bin/jq -cn \
+        --argjson tunnel_ok "$TUNNEL_OK" \
+        --arg status "$TUNNEL_STATUS" \
+        --arg message "$TUNNEL_MESSAGE" \
+        --arg http "$HTTP_CODE" \
+        --arg proxy_ip "$PROXY_IP" \
+        --arg direct_ip "$DIRECT_IP" \
+        '{ok:true,tunnelOk:$tunnel_ok,status:$status,message:$message,httpCode:$http,proxyExitIp:$proxy_ip,directExitIp:$direct_ip}')"
+      json_ok "$RESULT"
       rm -f "$TMP_BODY"
       exit 0
     fi

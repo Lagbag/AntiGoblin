@@ -3,407 +3,324 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>AntiGoblin</title>
-  <link rel="stylesheet" href="./styles.css?v=142">
+  <link rel="stylesheet" href="./styles.css?v=151">
 </head>
 <body>
-    <div id="authOverlay" class="auth-overlay" hidden>
-      <div class="auth-card">
-        <p class="eyebrow">AntiGoblin</p>
-        <h2 id="authTitle">&#1042;&#1093;&#1086;&#1076; &#1074; &#1087;&#1072;&#1085;&#1077;&#1083;&#1100;</h2>
-        <p id="authLead" class="auth-lede">
-          &#1042;&#1086;&#1081;&#1076;&#1080; &#1083;&#1086;&#1075;&#1080;&#1085;&#1086;&#1084; &#1080; &#1087;&#1072;&#1088;&#1086;&#1083;&#1077;&#1084; &#1086;&#1090; &#1074;&#1077;&#1073;-&#1080;&#1085;&#1090;&#1077;&#1088;&#1092;&#1077;&#1081;&#1089;&#1072; Keenetic.
-        </p>
-        <div class="grid">
-          <label>
-            <span id="authLoginLabel">&#1051;&#1086;&#1075;&#1080;&#1085;</span>
-            <input id="authLogin" type="text" autocomplete="username" placeholder="admin">
-          </label>
-          <label>
-            <span id="authPasswordLabel">&#1055;&#1072;&#1088;&#1086;&#1083;&#1100;</span>
-            <input id="authPassword" type="password" autocomplete="current-password" placeholder="********">
-          </label>
-        </div>
-        <div id="authStatus" class="probe-status" hidden></div>
-        <div class="hero-actions">
-          <button id="authSubmitBtn" type="button" class="primary">&#1042;&#1086;&#1081;&#1090;&#1080;</button>
+  <div id="authOverlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="./antigoblin-logo.png" alt="" class="auth-logo">
+        <div>
+          <p class="eyebrow">AntiGoblin</p>
+          <h2 id="authTitle">Вход в панель</h2>
         </div>
       </div>
+      <p id="authLead" class="auth-lede">Войди логином и паролем от веб-интерфейса Keenetic.</p>
+      <div class="grid">
+        <label><span id="authLoginLabel">Логин</span><input id="authLogin" type="text" autocomplete="username" placeholder="admin"></label>
+        <label><span id="authPasswordLabel">Пароль</span><input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+      </div>
+      <div id="authStatus" class="probe-status" hidden></div>
+      <button id="authSubmitBtn" type="button" class="primary auth-submit">Войти</button>
     </div>
+  </div>
 
-  <div class="page">
-    <header class="hero">
-      <div class="hero-brand">
-        <div class="hero-logo-wrap">
-          <img class="hero-logo" src="./antigoblin-logo.png" alt="AntiGoblin logo">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Навигация AntiGoblin">
+      <div class="sidebar-brand">
+        <img class="sidebar-logo" src="./antigoblin-logo.png" alt="AntiGoblin">
+        <div class="sidebar-brand-copy">
+          <strong>AntiGoblin</strong>
+          <span id="heroVersion" class="version-chip">…</span>
         </div>
-        <div class="hero-copy">
-          <div class="hero-copy-top">
-            <p class="eyebrow">AntiGoblin</p>
-            <span id="heroVersion" class="version-chip">…</span>
-          </div>
-          <h1 id="heroTitle">AntiGoblin</h1>
-          <p id="heroLead" class="lede">
-            VPN-маршрутизация на Keenetic без возни с конфигами: добавь сервер, выбери что вести через VPN и примени.
-          </p>
-        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item is-active" data-view-target="overview" aria-current="page">
+          <span class="nav-icon">⌂</span><span data-nav-label="overview">Обзор</span>
+        </button>
+        <button type="button" class="nav-item" data-view-target="servers">
+          <span class="nav-icon">◉</span><span data-nav-label="servers">Серверы</span><span id="navServerCount" class="nav-count">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view-target="routes">
+          <span class="nav-icon">↗</span><span data-nav-label="routes">Маршруты</span><span id="navRouteCount" class="nav-count">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view-target="diagnostics">
+          <span class="nav-icon">◎</span><span data-nav-label="diagnostics">Диагностика</span><span id="navHealthDot" class="nav-health-dot"></span>
+        </button>
+        <button type="button" class="nav-item" data-view-target="advanced">
+          <span class="nav-icon">⚙</span><span data-nav-label="advanced">Система</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
         <label class="lang-switcher">
           <span id="langLabel">Language</span>
-          <select id="langSelect">
-            <option value="ru">RU</option>
-            <option value="en">EN</option>
-          </select>
+          <select id="langSelect"><option value="ru">RU</option><option value="en">EN</option></select>
         </label>
+        <button id="logoutBtn" type="button" class="sidebar-logout">Выйти</button>
       </div>
-      <div class="hero-actions-row">
-        <div class="hero-actions hero-actions-left">
-          <button id="importStateBtn" type="button">&#1048;&#1084;&#1087;&#1086;&#1088;&#1090;</button>
-          <button id="exportStateBtn" type="button">&#1057;&#1082;&#1072;&#1095;&#1072;&#1090;&#1100;</button>
+    </aside>
+
+    <div class="workspace">
+      <header class="workspace-header">
+        <div class="workspace-heading">
+          <p class="eyebrow" id="viewKicker">AntiGoblin · Keenetic</p>
+          <h1 id="viewTitle">Обзор</h1>
+          <p id="viewLead" class="workspace-lead">Что сейчас реально применено на роутере.</p>
         </div>
-        <div class="hero-actions hero-actions-right">
-          <button id="repairRuntimeBtn" type="button" class="warning">&#1056;&#1077;&#1089;&#1090;&#1072;&#1088;&#1090;</button>
-          <button id="saveApplyBtn" type="button" class="primary">&#1057;&#1086;&#1093;&#1088;&#1072;&#1085;&#1080;&#1090;&#1100; &#1080; &#1087;&#1088;&#1080;&#1084;&#1077;&#1085;&#1080;&#1090;&#1100;</button>
-          <button id="logoutBtn" type="button" class="danger-solid">&#1042;&#1099;&#1081;&#1090;&#1080;</button>
+        <div class="workspace-actions">
+          <div id="headerRuntimeChip" class="runtime-chip is-neutral"><span class="status-dot"></span><span>проверяю…</span></div>
+          <button id="saveApplyBtn" type="button" class="primary header-apply">Сохранить и применить</button>
         </div>
-      </div>
+      </header>
+
       <input id="importStateInput" type="file" accept=".json,application/json" hidden>
-    </header>
 
-    <section class="setup-guide" aria-labelledby="setupGuideTitle">
-      <div class="setup-guide-head">
-        <div>
-          <p id="setupGuideKicker" class="panel-kicker">Быстрый старт</p>
-          <h2 id="setupGuideTitle">Три шага до рабочего VPN</h2>
-          <p id="setupGuideLead" class="panel-help">Сначала добавь ключ или подписку, потом выбери активный сервер и создай хотя бы одно правило трафика.</p>
-        </div>
-        <div id="setupProgress" class="setup-progress" aria-live="polite">0 / 3</div>
-      </div>
-      <div class="setup-steps">
-        <a id="setupStepAccess" class="setup-step" href="#proxySection" data-step="access">
-          <span class="setup-step-number">1</span>
-          <span class="setup-step-copy"><strong>Добавь VPN-доступ</strong><small>Подписка, URI или Hiddify / sing-box JSON</small></span>
-          <span class="setup-step-state">→</span>
-        </a>
-        <a id="setupStepActive" class="setup-step" href="#activeKeyBlock" data-step="active">
-          <span class="setup-step-number">2</span>
-          <span class="setup-step-copy"><strong>Выбери активный сервер</strong><small>Именно через него пойдут VPN-группы</small></span>
-          <span class="setup-step-state">→</span>
-        </a>
-        <a id="setupStepRules" class="setup-step" href="#groupsPanel" data-step="rules">
-          <span class="setup-step-number">3</span>
-          <span class="setup-step-copy"><strong>Настрой правила</strong><small>Домены / CIDR → через VPN или мимо VPN</small></span>
-          <span class="setup-step-state">→</span>
-        </a>
-      </div>
-      <div id="policyTrafficHint" class="setup-policy-note">
-        <strong>Важно:</strong> routing.json применяется только к трафику устройств, назначенных политике Keenetic <code>xkeen</code>.
-        Если счётчик перехвата в «Диагностике» остаётся 0 — назначь устройство в «Приоритеты подключений».
-      </div>
-    </section>
+      <!-- OVERVIEW -->
+      <main class="view is-active" data-view="overview">
+        <section class="runtime-hero" aria-labelledby="runtimeHeroTitle">
+          <div class="runtime-main">
+            <div class="runtime-label-row">
+              <span class="section-kicker">Применено сейчас</span>
+              <span id="runtimeProtocolBadge" class="protocol-chip">—</span>
+            </div>
+            <h2 id="runtimeHeroTitle"><span id="runtimeActiveName">Нет данных</span></h2>
+            <div id="runtimeEndpoint" class="runtime-endpoint">—</div>
+            <p id="runtimeSummary" class="runtime-summary">Загружаю состояние Xray / sing-box и политики xkeen…</p>
+            <div id="runtimeMismatch" class="runtime-mismatch" hidden></div>
+          </div>
+          <div class="runtime-actions">
+            <button id="overviewProbeAllBtn" type="button">Проверить все серверы</button>
+            <button id="overviewRefreshBtn" type="button">Обновить статус</button>
+            <button id="overviewGoServersBtn" type="button" class="soft-primary">Сменить сервер</button>
+          </div>
+        </section>
 
-    <main class="layout">
-      <div class="stack-col">
-        <section id="profilePanel" class="panel" data-panel-id="profile">
-          <div class="panel-header">
+        <section class="metric-grid" aria-label="Состояние VPN">
+          <article class="metric-card">
+            <span class="metric-label">Локальный SOCKS</span>
+            <strong id="metricSocks">—</strong>
+            <small>127.0.0.1:61080</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Перехват xkeen</span>
+            <strong id="metricCapture">—</strong>
+            <small id="metricCaptureHint">TCP PREROUTING</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">WAN политики</span>
+            <strong id="metricPolicy">—</strong>
+            <small id="metricPolicyHint">xkeen</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Автовыбор</span>
+            <strong id="metricAutoSelect">—</strong>
+            <small id="metricAutoSelectHint">последняя проверка</small>
+          </article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="dashboard-card quick-card">
+            <div class="dashboard-card-head">
+              <div><span class="section-kicker">Быстрый старт</span><h3 id="setupGuideTitle">Три шага до рабочего VPN</h3></div>
+              <div id="setupProgress" class="setup-progress">0 / 3</div>
+            </div>
+            <p id="setupGuideLead" class="card-help">Добавь доступ, выбери сервер и задай правила.</p>
+            <p id="setupGuideKicker" hidden>Быстрый старт</p>
+            <div class="setup-steps compact">
+              <a id="setupStepAccess" class="setup-step" href="#" data-view-link="servers" data-step="access"><span class="setup-step-number">1</span><span class="setup-step-copy"><strong>Добавь VPN-доступ</strong><small>Подписка, URI или JSON</small></span><span class="setup-step-state">→</span></a>
+              <a id="setupStepActive" class="setup-step" href="#" data-view-link="servers" data-step="active"><span class="setup-step-number">2</span><span class="setup-step-copy"><strong>Выбери сервер</strong><small>Будет видно, что реально применено</small></span><span class="setup-step-state">→</span></a>
+              <a id="setupStepRules" class="setup-step" href="#" data-view-link="routes" data-step="rules"><span class="setup-step-number">3</span><span class="setup-step-copy"><strong>Настрой маршруты</strong><small>VPN / напрямую по группам</small></span><span class="setup-step-state">→</span></a>
+            </div>
+          </article>
+
+          <article class="dashboard-card selected-card">
+            <span class="section-kicker">Выбрано в интерфейсе</span>
+            <h3 id="selectedProxyName">—</h3>
+            <div id="selectedProxyMeta" class="selected-meta">—</div>
+            <p id="selectedProxyNotice" class="card-help">После смены сервера нажми «Сохранить и применить».</p>
+            <button type="button" class="text-button" data-view-target-inline="servers">Открыть список серверов →</button>
+          </article>
+        </section>
+
+        <div id="policyTrafficHint" class="notice notice-info">routing.json работает только для устройств, назначенных политике Keenetic xkeen.</div>
+      </main>
+
+      <!-- SERVERS -->
+      <main class="view" data-view="servers" hidden>
+        <section id="profilePanel" class="panel server-workspace" data-panel-id="profile">
+          <div class="panel-header server-page-head">
             <div>
               <p id="profileKicker" class="panel-kicker">Профиль</p>
-              <h2 id="profileTitle">Профиль и VPN-доступ</h2>
+              <h2 id="profileTitle">Серверы и подписки</h2>
+              <p class="panel-help">Здесь только VPN-доступ. Маршруты вынесены в отдельный раздел.</p>
+            </div>
+            <div class="server-head-actions">
+              <button id="addManualKeyBtn" type="button">+ Ключ</button>
+              <button id="addSubscriptionBtn" type="button" class="soft-primary">+ Подписка</button>
             </div>
           </div>
 
-          <div class="grid two">
-            <label>
-              <span id="activeProfileLabel">&#1040;&#1082;&#1090;&#1080;&#1074;&#1085;&#1099;&#1081; &#1087;&#1088;&#1086;&#1092;&#1080;&#1083;&#1100;</span>
-              <select id="activeProfile"></select>
-            </label>
-            <label>
-              <span id="profileNameLabel">&#1053;&#1072;&#1079;&#1074;&#1072;&#1085;&#1080;&#1077; &#1085;&#1072;&#1073;&#1086;&#1088;&#1072;</span>
-              <input id="profileName" type="text" placeholder="&#1055;&#1088;&#1086;&#1092;&#1080;&#1083;&#1100; 1">
-            </label>
-          </div>
-
-          <div class="profile-actions-row">
-            <div class="hero-actions compact-actions profile-actions-center">
-              <button id="addProfileBtn" type="button">&#1053;&#1086;&#1074;&#1099;&#1081;</button>
-              <button id="duplicateProfileBtn" type="button">&#1044;&#1091;&#1073;&#1083;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100;</button>
-              <button id="removeProfileBtn" type="button">&#1059;&#1076;&#1072;&#1083;&#1080;&#1090;&#1100;</button>
-              <button id="saveStateBtn" type="button">&#1057;&#1086;&#1093;&#1088;&#1072;&#1085;&#1080;&#1090;&#1100;</button>
+          <div class="profile-strip">
+            <label><span id="activeProfileLabel">Активный профиль</span><select id="activeProfile"></select></label>
+            <label><span id="profileNameLabel">Название</span><input id="profileName" type="text" placeholder="Профиль 1"></label>
+            <div class="profile-actions-row">
+              <button id="saveStateBtn" type="button">Сохранить профиль</button>
+              <button id="addProfileBtn" type="button">Новый</button>
+              <button id="duplicateProfileBtn" type="button">Копия</button>
+              <button id="removeProfileBtn" type="button" class="danger">Удалить</button>
             </div>
           </div>
 
-          <details class="expert-settings">
-            <summary><span id="profileAdvancedSummary">Дополнительные настройки профиля</span><small id="profileAdvancedHint">Обычно менять не нужно</small></summary>
-            <div class="grid two profile-settings-grid">
-              <label>
-                <span id="domainStrategyLabel">Стратегия доменов</span>
-                <select id="domainStrategy">
-                  <option value="IPIfNonMatch">IPIfNonMatch</option>
-                  <option value="AsIs">AsIs</option>
-                  <option value="IPOnDemand">IPOnDemand</option>
-                </select>
-              </label>
-              <label>
-                <span id="fallbackLabel">Трафик без совпавшего правила</span>
-                <select id="fallbackOutbound">
-                  <option value="direct">Напрямую</option>
-                  <option value="vless-reality">Через активный VPN</option>
-                </select>
-              </label>
-            </div>
-          </details>
-
-          <div id="proxySection" class="vless-panel">
-            <div class="panel-header mini-header">
-              <div>
-                <p class="panel-kicker">VLESS · VMess · Hysteria · Trojan · SS · TUIC · AnyTLS · WireGuard</p>
-                <h3 id="proxyTitle">VPN-доступ</h3>
-                <p id="proxyHelp" class="panel-help">Добавь подписку или отдельный ключ. AntiGoblin сам определит протокол и выберет Xray или sing-box.</p>
-              </div>
-              <div class="hero-actions compact-actions proxy-actions">
-                <button id="addManualKeyBtn" type="button">+ Ручной ключ</button>
-                <button id="addSubscriptionBtn" type="button">+ Подписка</button>
-                <button id="probeProxyBtn" type="button">Проверить активный</button>
-              </div>
-            </div>
+          <div id="proxySection" class="proxy-workspace">
+            <div class="sr-only"><span id="proxyTitle">VPN-доступ</span><span id="proxyHelp">Добавь подписку или ключ.</span></div>
 
             <section id="activeKeyBlock" class="key-block active-key-block">
-              <div class="key-block-head">
+              <div class="active-server-head">
                 <div>
-                  <h4 class="key-block-title" id="activeKeyHeading">Активный сервер</h4>
-                  <p id="activeKeyHelp" class="key-block-help">Выбери один сервер. Все правила «Через VPN» используют его.</p>
+                  <span class="section-kicker">Серверы</span>
+                  <h3 id="activeKeyHeading">Выбери активный сервер</h3>
+                  <p id="activeKeyHelp" class="key-block-help">Зелёная метка «применён» означает реальный runtime, а не просто выбранную строку.</p>
                 </div>
+                <button id="probeProxyBtn" type="button">Проверить активный</button>
               </div>
-              <div class="active-key-toolbar">
-                <input id="activeProxyFilter" type="search" autocomplete="off" placeholder="Поиск сервера…">
+
+              <div class="server-toolbar">
+                <div class="server-search-wrap"><span class="search-icon">⌕</span><input id="activeProxyFilter" type="search" autocomplete="off" placeholder="Поиск по имени, протоколу или адресу…"></div>
                 <span id="activeProxyCount" class="active-proxy-count"></span>
+                <button id="probeAllBtn" type="button">Проверить все</button>
               </div>
-              <div class="auto-select-box">
-                <label class="toggle auto-select-toggle">
-                  <input id="autoSelectEnabled" type="checkbox">
-                  <span id="autoSelectLabel">Автоматически выбирать сервер с минимальным пингом</span>
-                </label>
+
+              <div class="auto-select-box redesigned">
+                <label class="toggle auto-select-toggle"><input id="autoSelectEnabled" type="checkbox"><span id="autoSelectLabel">Автоматически выбирать минимальную задержку</span></label>
                 <div class="auto-select-controls">
-                  <label>
-                    <span id="autoSelectIntervalLabel">Проверять</span>
-                    <select id="autoSelectInterval">
-                      <option value="60">раз в 1 минуту</option>
-                      <option value="120">раз в 2 минуты</option>
-                      <option value="300">раз в 5 минут</option>
-                      <option value="600">раз в 10 минут</option>
-                      <option value="1800">раз в 30 минут</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span id="autoSelectThresholdLabel">Переключать, если быстрее на</span>
-                    <div class="input-suffix"><input id="autoSelectThreshold" type="number" min="0" max="500" step="1"><span>ms</span></div>
-                  </label>
-                  <button id="probeAllBtn" type="button">Проверить все и выбрать лучший</button>
+                  <label><span id="autoSelectIntervalLabel">Интервал</span><select id="autoSelectInterval"><option value="60">1 мин</option><option value="120">2 мин</option><option value="300">5 мин</option><option value="600">10 мин</option><option value="1800">30 мин</option></select></label>
+                  <label><span id="autoSelectThresholdLabel">Порог переключения</span><div class="input-suffix"><input id="autoSelectThreshold" type="number" min="0" max="500" step="1"><span>ms</span></div></label>
+                  <div id="autoSelectStatus" class="auto-select-status" aria-live="polite">Пинги ещё не измерялись.</div>
                 </div>
-                <div id="autoSelectStatus" class="auto-select-status" aria-live="polite">Пинги ещё не измерялись.</div>
               </div>
-              <ul id="activeProxyList" class="active-proxy-list" aria-live="polite"></ul>
+
+              <ul id="activeProxyList" class="active-proxy-list server-list" aria-live="polite"></ul>
               <div id="proxyProbeStatus" class="probe-status" hidden></div>
             </section>
 
+            <div class="source-section-head"><div><span class="section-kicker">Источники</span><h3>Откуда берутся серверы</h3></div></div>
             <div class="key-sources-grid">
               <section class="key-block source-block">
-                <h4 class="key-block-title" id="subsHeading">Подписки</h4>
-                <p id="subsHelp" class="key-block-help">Лучший вариант, если провайдер выдаёт URL подписки.</p>
+                <div class="source-title-row"><div><h4 class="key-block-title" id="subsHeading">Подписки</h4><p id="subsHelp" class="key-block-help">URL провайдера с автоматическим списком серверов.</p></div></div>
                 <ul id="subscriptionsList" class="cards-list" aria-live="polite"></ul>
               </section>
-
               <section class="key-block source-block">
-                <h4 class="key-block-title" id="manualKeysHeading">Отдельные ключи</h4>
-                <p id="manualKeysHelp" class="key-block-help">URI вида vless://, hysteria2://, tuic:// и другие.</p>
+                <div class="source-title-row"><div><h4 class="key-block-title" id="manualKeysHeading">Отдельные ключи</h4><p id="manualKeysHelp" class="key-block-help">Ручные URI и raw sing-box/Hiddify JSON.</p></div></div>
                 <ul id="manualKeysList" class="cards-list" aria-live="polite"></ul>
               </section>
             </div>
 
-            <div id="manualKeyForm" class="inline-form" hidden>
-              <h4 class="key-block-title" id="manualKeyFormTitle">Новый ключ</h4>
-              <p id="manualKeyFormHelp" class="form-help">Вставь ссылку целиком. Поля ниже заполнятся автоматически; вручную их обычно трогать не надо.</p>
-              <label>
-                <span id="keyNameLabelSpan">Имя ключа <small class="label-optional">(необязательно)</small></span>
-                <input id="manualKeyName" type="text" placeholder="My VPN">
-              </label>
-              <label>
-                <span id="proxyUrlLabel">Proxy URI / sing-box JSON</span>
-                <textarea id="proxyImportUrl" rows="3" placeholder="vless://…  hysteria2://…  trojan://…  ss://…  tuic://…  { &quot;outbounds&quot;: […], &quot;endpoints&quot;: […] }"></textarea>
-              </label>
-              <div class="form-row import-key-action">
-                <button id="importProxyBtn" type="button" class="primary">Добавить из ссылки / JSON</button>
-              </div>
-              <details class="advanced-fields">
-                <summary id="advancedFieldsSummary">Расширенные поля (заполняются автоматически)</summary>
-                <div class="grid two">
-                  <label>
-                    <span id="proxyAddressLabel">Сервер</span>
-                    <input id="proxyAddress" type="text" placeholder="vpn.example.com">
-                  </label>
-                  <label>
-                    <span id="proxyPortLabel">Порт</span>
-                    <input id="proxyPort" type="number" min="1" max="65535" placeholder="443">
-                  </label>
-                </div>
-                <div class="grid two">
-                  <label><span>UUID</span><input id="proxyUuid" type="text" placeholder="00000000-0000-0000-0000-000000000000"></label>
-                  <label><span>Flow</span><input id="proxyFlow" type="text" placeholder="xtls-rprx-vision"></label>
-                </div>
-                <div class="grid two">
-                  <label><span>Public key</span><input id="proxyPublicKey" type="text" placeholder="YOUR_REALITY_PUBLIC_KEY"></label>
-                  <label><span>Server name (SNI)</span><input id="proxyServerName" type="text" placeholder="www.cloudflare.com"></label>
-                </div>
-                <div class="grid two">
-                  <label><span>Short ID</span><input id="proxyShortId" type="text" placeholder="0123456789abcdef"></label>
-                  <label><span>Fingerprint</span><input id="proxyFingerprint" type="text" placeholder="random"></label>
-                </div>
+            <div id="manualKeyForm" class="inline-form editor-sheet" hidden>
+              <div class="editor-head"><div><span class="section-kicker">Редактор</span><h4 class="key-block-title" id="manualKeyFormTitle">Новый ключ</h4></div><button id="cancelManualKeyBtn" type="button" class="icon-close" aria-label="Закрыть">×</button></div>
+              <p id="manualKeyFormHelp" class="form-help">Вставь ссылку целиком — поля заполнятся автоматически.</p>
+              <label><span id="keyNameLabelSpan">Имя ключа</span><input id="manualKeyName" type="text" placeholder="My VPN"></label>
+              <label><span id="proxyUrlLabel">Proxy URI / sing-box JSON</span><textarea id="proxyImportUrl" rows="4" placeholder="vless://…  hysteria2://…  { &quot;outbounds&quot;: […] }"></textarea></label>
+              <div class="editor-actions"><button id="importProxyBtn" type="button">Разобрать ссылку / JSON</button><button id="saveManualKeyBtn" type="button" class="primary">Сохранить ключ</button></div>
+              <details class="advanced-fields"><summary id="advancedFieldsSummary">Расширенные поля</summary>
+                <div class="grid two"><label><span id="proxyAddressLabel">Сервер</span><input id="proxyAddress" type="text"></label><label><span id="proxyPortLabel">Порт</span><input id="proxyPort" type="number" min="1" max="65535"></label></div>
+                <div class="grid two"><label><span>UUID</span><input id="proxyUuid" type="text"></label><label><span>Flow</span><input id="proxyFlow" type="text"></label></div>
+                <div class="grid two"><label><span>Public key</span><input id="proxyPublicKey" type="text"></label><label><span>SNI</span><input id="proxyServerName" type="text"></label></div>
+                <div class="grid two"><label><span>Short ID</span><input id="proxyShortId" type="text"></label><label><span>Fingerprint</span><input id="proxyFingerprint" type="text"></label></div>
               </details>
-              <div class="form-row form-actions">
-                <button id="saveManualKeyBtn" type="button" class="primary">Сохранить</button>
-                <button id="cancelManualKeyBtn" type="button">Отмена</button>
-              </div>
             </div>
 
-            <div id="subscriptionForm" class="inline-form" hidden>
-              <h4 class="key-block-title" id="newSubTitle">Новая подписка</h4>
-              <p id="subscriptionFormHelp" class="form-help">Вставь HTTPS-ссылку подписки. AntiGoblin загрузит список серверов и добавит их в активный профиль.</p>
-              <label>
-                <span id="subNameLabelSpan">Имя</span>
-                <input id="newSubscriptionName" type="text" placeholder="My subscription">
-              </label>
-              <label>
-                <span id="subUrlLabelSpan">URL (только https://)</span>
-                <input id="newSubscriptionUrl" type="url" placeholder="https://example.com/sub/token">
-              </label>
+            <div id="subscriptionForm" class="inline-form editor-sheet" hidden>
+              <div class="editor-head"><div><span class="section-kicker">Подписка</span><h4 class="key-block-title" id="newSubTitle">Новая подписка</h4></div><button id="cancelSubscriptionBtn" type="button" class="icon-close" aria-label="Закрыть">×</button></div>
+              <p id="subscriptionFormHelp" class="form-help">Вставь HTTPS-ссылку подписки.</p>
+              <div class="grid two"><label><span id="subNameLabelSpan">Имя</span><input id="newSubscriptionName" type="text" placeholder="My subscription"></label><label><span id="subUrlLabelSpan">URL</span><input id="newSubscriptionUrl" type="url" placeholder="https://example.com/sub/token"></label></div>
               <div id="subscriptionFormStatus" class="probe-status" hidden></div>
-              <div class="form-row form-actions">
-                <button id="saveSubscriptionBtn" type="button" class="primary">Загрузить и сохранить</button>
-                <button id="cancelSubscriptionBtn" type="button">Отмена</button>
-              </div>
+              <div class="editor-actions"><button id="saveSubscriptionBtn" type="button" class="primary">Загрузить и сохранить</button></div>
             </div>
-
-            <details class="expert-settings proxy-expert-settings">
-              <summary><span id="proxyAdvancedSummary">Производительность / Mux</span><small id="proxyAdvancedHint">Не меняй без необходимости</small></summary>
-              <div class="mux-settings">
-              <div class="mux-settings-head">
-                <div>
-                  <p id="muxKicker" class="panel-kicker">Mux / XUDP</p>
-                  <h4 id="muxTitle">Mux mode</h4>
-                </div>
-                <span id="muxSummary" class="mux-summary">Off</span>
-              </div>
-              <div class="grid two">
-                <label>
-                  <span id="muxModeLabel">Mode</span>
-                  <select id="muxMode">
-                    <option value="off">Off</option>
-                    <option value="xudp">XUDP only</option>
-                  </select>
-                </label>
-                <label>
-                  <span id="muxUdp443Label">UDP/443</span>
-                  <select id="muxUdp443">
-                    <option value="reject">reject</option>
-                    <option value="skip">skip</option>
-                    <option value="allow">allow</option>
-                  </select>
-                </label>
-              </div>
-              <div class="grid two mux-number-grid">
-                <label>
-                  <span id="muxXudpConcurrencyLabel">XUDP concurrency</span>
-                  <input id="muxXudpConcurrency" type="number" min="1" max="1024" step="1" placeholder="8">
-                </label>
-              </div>
-              </div>
-            </details>
           </div>
-        </section>
 
-        <section class="panel health-panel" data-panel-id="health" data-default-collapsed="1">
-          <div class="panel-header">
-            <div>
-              <p id="healthKicker" class="panel-kicker">&#1057;&#1090;&#1072;&#1090;&#1091;&#1089;</p>
-              <h2 id="healthTitle">Диагностика и логи</h2>
+          <details class="expert-settings profile-expert">
+            <summary><span id="profileAdvancedSummary">Дополнительные настройки профиля</span><small id="profileAdvancedHint">Обычно менять не нужно</small></summary>
+            <div class="grid two profile-settings-grid"><label><span id="domainStrategyLabel">Стратегия доменов</span><select id="domainStrategy"><option value="IPIfNonMatch">IPIfNonMatch</option><option value="AsIs">AsIs</option><option value="IPOnDemand">IPOnDemand</option></select></label><label><span id="fallbackLabel">Трафик без совпавшего правила</span><select id="fallbackOutbound"><option value="direct">Напрямую</option><option value="vless-reality">Через активный VPN</option></select></label></div>
+          </details>
+
+          <details class="expert-settings proxy-expert-settings">
+            <summary><span id="proxyAdvancedSummary">Производительность / Mux</span><small id="proxyAdvancedHint">Не меняй без необходимости</small></summary>
+            <div class="mux-settings">
+              <div class="mux-settings-head"><div><p id="muxKicker" class="panel-kicker">Mux / XUDP</p><h4 id="muxTitle">Mux mode</h4></div><span id="muxSummary" class="mux-summary">Off</span></div>
+              <div class="grid two"><label><span id="muxModeLabel">Mode</span><select id="muxMode"><option value="off">Off</option><option value="xudp">XUDP only</option></select></label><label><span id="muxUdp443Label">UDP/443</span><select id="muxUdp443"><option value="reject">reject</option><option value="skip">skip</option><option value="allow">allow</option></select></label></div>
+              <div class="grid two mux-number-grid"><label><span id="muxXudpConcurrencyLabel">XUDP concurrency</span><input id="muxXudpConcurrency" type="number" min="1" max="1024" step="1" placeholder="8"></label></div>
             </div>
-            <div class="hero-actions compact-actions">
-              <button id="refreshHealthBtn" type="button">&#1054;&#1073;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
-            </div>
+          </details>
+        </section>
+      </main>
+
+      <!-- ROUTES -->
+      <main class="view" data-view="routes" hidden>
+        <section id="groupsPanel" class="panel groups-panel" data-panel-id="groups">
+          <div class="panel-header routes-head">
+            <div><p id="groupsKicker" class="panel-kicker">Маршрутизация</p><h2 id="groupsTitle">Что вести через VPN</h2><p id="groupsHelp" class="panel-help">Правила читаются сверху вниз. Группы можно выключать, не удаляя.</p></div>
+            <button id="addGroupBtn" type="button" class="soft-primary">+ Добавить группу</button>
+          </div>
+          <div class="route-mode-note"><strong>Важно:</strong> «Трафик без совпавшего правила» настраивается в Серверы → Дополнительные настройки профиля.</div>
+          <div id="groups"></div>
+        </section>
+      </main>
+
+      <!-- DIAGNOSTICS -->
+      <main class="view" data-view="diagnostics" hidden>
+        <section class="panel health-panel" data-panel-id="health">
+          <div class="panel-header diagnostic-head">
+            <div><p id="healthKicker" class="panel-kicker">Статус</p><h2 id="healthTitle">Диагностика</h2><p class="panel-help">Здесь видно, на каком участке реально ломается цепочка: xkeen → Xray → sing-box → сервер.</p></div>
+            <div class="hero-actions compact-actions"><button id="refreshHealthBtn" type="button">Обновить</button><button id="repairRuntimeBtn" type="button" class="warning">Перезапустить VPN</button></div>
           </div>
           <div id="healthBadges" class="health-badges"></div>
           <div id="exitIpRow" class="exit-ip-row"></div>
           <div id="healthChecks" class="health-checks"></div>
           <div id="stackInfo" class="stack-info"></div>
-          <div class="hero-actions compact-actions service-actions">
-            <button id="restartXrayBtn" type="button">&#1055;&#1077;&#1088;&#1077;&#1079;&#1072;&#1087;&#1091;&#1089;&#1090;&#1080;&#1090;&#1100; xray</button>
-            <button id="restartSingboxBtn" type="button">&#1055;&#1077;&#1088;&#1077;&#1079;&#1072;&#1087;&#1091;&#1089;&#1090;&#1080;&#1090;&#1100; sing-box</button>
-            <button id="restartSelfhealBtn" type="button">&#1055;&#1077;&#1088;&#1077;&#1079;&#1072;&#1087;&#1091;&#1089;&#1090;&#1080;&#1090;&#1100; self-heal</button>
-          </div>
+          <div class="service-bar"><span>Сервисы</span><button id="restartXrayBtn" type="button">↻ xray</button><button id="restartSingboxBtn" type="button">↻ sing-box</button><button id="restartSelfhealBtn" type="button">↻ self-heal</button></div>
 
-          <div class="logs-controls">
-            <label class="logs-select-label">
-              <span id="logsSelectLabel">&#1051;&#1086;&#1075;</span>
-              <select id="logsSelect">
-                <option value="xray">xray (manual)</option>
-                <option value="singbox">sing-box</option>
-                <option value="selfheal">self-heal</option>
-                <option value="autoselect">auto-select</option>
-                <option value="health">health</option>
-                <option value="sysctl">sysctl</option>
-                <option value="fd-dump">xray fd-dump (latest)</option>
-              </select>
-            </label>
-            <label class="logs-select-label">
-              <span id="logsLinesLabel">&#1057;&#1090;&#1088;&#1086;&#1082;</span>
-              <select id="logsLinesSelect">
-                <option value="50">50</option>
-                <option value="100" selected>100</option>
-                <option value="300">300</option>
-                <option value="1000">1000</option>
-              </select>
-            </label>
-            <button id="loadLogsBtn" type="button" class="logs-action-btn">&#1047;&#1072;&#1075;&#1088;&#1091;&#1079;&#1080;&#1090;&#1100;</button>
+          <div class="logs-panel">
+            <div class="logs-controls">
+              <label class="logs-select-label"><span id="logsSelectLabel">Лог</span><select id="logsSelect"><option value="xray">xray</option><option value="singbox">sing-box runtime</option><option value="selfheal">self-heal</option><option value="autoselect">auto-select</option><option value="health">health</option><option value="sysctl">sysctl</option><option value="fd-dump">xray fd-dump</option></select></label>
+              <label class="logs-select-label"><span id="logsLinesLabel">Строк</span><select id="logsLinesSelect"><option value="50">50</option><option value="100" selected>100</option><option value="300">300</option><option value="1000">1000</option></select></label>
+              <button id="loadLogsBtn" type="button">Загрузить лог</button>
+            </div>
+            <div class="log-preview-wrap" id="logsPreviewWrap" hidden><button id="logsCopyBtn" type="button" class="log-copy-btn">Скопировать</button><pre id="logsPreview" class="log-preview"></pre></div>
           </div>
-          <div class="log-preview-wrap" id="logsPreviewWrap" hidden>
-            <button id="logsCopyBtn" type="button" class="log-copy-btn" aria-label="&#1057;&#1082;&#1086;&#1087;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100; &#1083;&#1086;&#1075;">&#1057;&#1082;&#1086;&#1087;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100;</button>
-            <pre id="logsPreview" class="log-preview"></pre>
+        </section>
+      </main>
+
+      <!-- ADVANCED -->
+      <main class="view" data-view="advanced" hidden>
+        <section class="panel system-panel">
+          <div class="panel-header"><div><p class="panel-kicker">Система</p><h2>Обслуживание и данные</h2><p class="panel-help">Редкие операции вынесены сюда, чтобы не мешать обычной настройке VPN.</p></div></div>
+          <div class="system-actions-grid">
+            <article class="system-action-card"><h3>State</h3><p>Импорт / экспорт профилей, ключей и правил.</p><div class="hero-actions"><button id="importStateBtn" type="button">Импорт</button><button id="exportStateBtn" type="button">Скачать</button></div></article>
+            <article class="system-action-card"><h3>Runtime</h3><p>Перезапускает VPN и восстанавливает policy/iptables без удаления настроек.</p><button type="button" data-trigger="repair-runtime">Перезапустить VPN</button></article>
           </div>
         </section>
 
-        <section class="panel output-panel" data-panel-id="preview" data-default-collapsed="1">
-          <div class="panel-header">
-            <div>
-              <p id="previewKicker" class="panel-kicker">&#1055;&#1088;&#1077;&#1076;&#1087;&#1088;&#1086;&#1089;&#1084;&#1086;&#1090;&#1088;</p>
-              <h2 id="previewTitle">Технический preview routing.json</h2>
-            </div>
-          </div>
+        <section class="panel output-panel" data-panel-id="preview">
+          <div class="panel-header"><div><p id="previewKicker" class="panel-kicker">Предпросмотр</p><h2 id="previewTitle">routing.json</h2><p class="panel-help">Это технический результат генератора. В обычной работе его редактировать не нужно.</p></div></div>
           <div class="stats" id="stats"></div>
           <pre id="routingPreview"></pre>
         </section>
-      </div>
+      </main>
 
-      <section id="groupsPanel" class="panel groups-panel" data-panel-id="groups">
-        <div class="panel-header">
-          <div>
-            <p id="groupsKicker" class="panel-kicker">Маршрутизация</p>
-            <h2 id="groupsTitle">Что вести через VPN</h2>
-            <p id="groupsHelp" class="panel-help">Каждая группа — это список доменов и IP/CIDR. Выбери «Через VPN» или «Мимо VPN» и включи группу.</p>
-          </div>
-          <button id="addGroupBtn" type="button">&#1044;&#1086;&#1073;&#1072;&#1074;&#1080;&#1090;&#1100; &#1075;&#1088;&#1091;&#1087;&#1087;&#1091;</button>
-        </div>
-        <div id="groups"></div>
-      </section>
-    </main>
-
-    <div id="actionDock" class="action-dock is-idle" role="region" aria-label="Применение настроек">
-      <div class="action-dock-copy">
-        <strong id="actionDockTitle">Применить изменения</strong>
-        <span id="actionDockHint">Сохраняет профиль, проверяет конфиги и перезапускает VPN с таймаутами.</span>
+      <div id="actionDock" class="action-dock is-idle" role="status" aria-live="polite">
+        <div class="action-dock-copy"><strong id="actionDockTitle">Применение</strong><span id="actionDockHint">Статус операции появится здесь.</span></div>
+        <button id="quickApplyBtn" type="button" class="primary">Применить</button>
       </div>
-      <button id="quickApplyBtn" type="button" class="primary">Сохранить и применить</button>
     </div>
   </div>
 
-  <script charset="utf-8" src="./app.js?v=142"></script>
+  <!-- Hidden compatibility nodes used by existing translation/render code. -->
+  <div class="sr-only" aria-hidden="true"><span id="heroTitle">AntiGoblin</span><span id="heroLead">VPN routing</span></div>
+
+  <script charset="utf-8" src="./app.js?v=151"></script>
 </body>
 </html>

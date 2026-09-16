@@ -66,6 +66,7 @@ const AUTOSELECT_STATUS_URL = "./api/routing.cgi?kind=autoselect-status";
 const AUTOSELECT_RUN_URL = "./api/routing.cgi?kind=autoselect-run";
 const APPLY_RUNTIME_URL = "./api/routing.cgi?kind=apply-runtime";
 const PROBE_URL = "./api/routing.cgi?kind=probe";
+const EGRESS_CHECK_URL = "./api/routing.cgi?kind=egress-check";
 const REPAIR_URL = "./api/routing.cgi?kind=repair-runtime";
 const LOGIN_URL = "./api/routing.cgi?kind=login";
 const LOGOUT_URL = "./api/routing.cgi?kind=logout";
@@ -669,6 +670,10 @@ const fallbackState = {
 let state = null;
 let autoSelectRuntime = { phase: "idle", message: "", results: [], bestId: "", bestLatencyMs: null, currentId: "", currentLatencyMs: null, updatedAt: 0 };
 let autoSelectTimer = null;
+let lastHealthPayload = null;
+let lastEgressCheck = null;
+const VIEW_KEY = "antigoblin-view-v1";
+let currentView = localStorage.getItem(VIEW_KEY) || "overview";
 
 const els = {
   authOverlay: document.getElementById("authOverlay"),
@@ -814,7 +819,32 @@ const els = {
   actionDock: document.getElementById("actionDock"),
   actionDockTitle: document.getElementById("actionDockTitle"),
   actionDockHint: document.getElementById("actionDockHint"),
-  quickApplyBtn: document.getElementById("quickApplyBtn")
+  quickApplyBtn: document.getElementById("quickApplyBtn"),
+  viewKicker: document.getElementById("viewKicker"),
+  viewTitle: document.getElementById("viewTitle"),
+  viewLead: document.getElementById("viewLead"),
+  headerRuntimeChip: document.getElementById("headerRuntimeChip"),
+  navServerCount: document.getElementById("navServerCount"),
+  navRouteCount: document.getElementById("navRouteCount"),
+  navHealthDot: document.getElementById("navHealthDot"),
+  runtimeActiveName: document.getElementById("runtimeActiveName"),
+  runtimeProtocolBadge: document.getElementById("runtimeProtocolBadge"),
+  runtimeEndpoint: document.getElementById("runtimeEndpoint"),
+  runtimeSummary: document.getElementById("runtimeSummary"),
+  runtimeMismatch: document.getElementById("runtimeMismatch"),
+  metricSocks: document.getElementById("metricSocks"),
+  metricCapture: document.getElementById("metricCapture"),
+  metricCaptureHint: document.getElementById("metricCaptureHint"),
+  metricPolicy: document.getElementById("metricPolicy"),
+  metricPolicyHint: document.getElementById("metricPolicyHint"),
+  metricAutoSelect: document.getElementById("metricAutoSelect"),
+  metricAutoSelectHint: document.getElementById("metricAutoSelectHint"),
+  selectedProxyName: document.getElementById("selectedProxyName"),
+  selectedProxyMeta: document.getElementById("selectedProxyMeta"),
+  selectedProxyNotice: document.getElementById("selectedProxyNotice"),
+  overviewProbeAllBtn: document.getElementById("overviewProbeAllBtn"),
+  overviewRefreshBtn: document.getElementById("overviewRefreshBtn"),
+  overviewGoServersBtn: document.getElementById("overviewGoServersBtn")
 };
 
 window.addEventListener("error", (event) => {
@@ -826,8 +856,230 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 bindTopLevel();
+bindShellNavigation();
 setupPanelCollapse();
+switchView(currentView, { scroll: false });
 bootstrap();
+
+const VIEW_COPY = {
+  ru: {
+    overview: ["AntiGoblin · Keenetic", "Обзор", "Что сейчас реально применено на роутере."],
+    servers: ["VPN-доступ", "Серверы", "Подписки, ключи, задержка и реальный активный runtime."],
+    routes: ["Маршрутизация", "Маршруты", "Домены и CIDR: через VPN или напрямую."],
+    diagnostics: ["Runtime", "Диагностика", "XKeen, Xray, sing-box, policy и журналы в одном месте."],
+    advanced: ["Система", "Система", "Импорт, экспорт и технический preview конфигурации."]
+  },
+  en: {
+    overview: ["AntiGoblin · Keenetic", "Overview", "What is actually applied on the router right now."],
+    servers: ["VPN access", "Servers", "Subscriptions, keys, latency and the real active runtime."],
+    routes: ["Routing", "Routes", "Domains and CIDRs: through VPN or direct."],
+    diagnostics: ["Runtime", "Diagnostics", "XKeen, Xray, sing-box, policy and logs in one place."],
+    advanced: ["System", "System", "Import, export and technical configuration preview."]
+  }
+};
+
+function switchView(view, options = {}) {
+  const valid = new Set(["overview", "servers", "routes", "diagnostics", "advanced"]);
+  const next = valid.has(view) ? view : "overview";
+  currentView = next;
+  localStorage.setItem(VIEW_KEY, next);
+  document.querySelectorAll("[data-view]").forEach((node) => {
+    const active = node.dataset.view === next;
+    node.hidden = !active;
+    node.classList.toggle("is-active", active);
+  });
+  document.querySelectorAll("[data-view-target]").forEach((btn) => {
+    const active = btn.dataset.viewTarget === next;
+    btn.classList.toggle("is-active", active);
+    if (active) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  });
+  renderViewHeader();
+  if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderViewHeader() {
+  const lang = currentLang === "en" ? "en" : "ru";
+  const copy = VIEW_COPY[lang][currentView] || VIEW_COPY[lang].overview;
+  if (els.viewKicker) els.viewKicker.textContent = copy[0];
+  if (els.viewTitle) els.viewTitle.textContent = copy[1];
+  if (els.viewLead) els.viewLead.textContent = copy[2];
+  document.querySelectorAll("[data-nav-label]").forEach((node) => {
+    const key = node.dataset.navLabel;
+    const labels = lang === "ru"
+      ? { overview: "Обзор", servers: "Серверы", routes: "Маршруты", diagnostics: "Диагностика", advanced: "Система" }
+      : { overview: "Overview", servers: "Servers", routes: "Routes", diagnostics: "Diagnostics", advanced: "System" };
+    if (labels[key]) node.textContent = labels[key];
+  });
+}
+
+function bindShellNavigation() {
+  document.querySelectorAll("[data-view-target]").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.dataset.viewTarget));
+  });
+  document.querySelectorAll("[data-view-link]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchView(link.dataset.viewLink);
+    });
+  });
+  document.querySelectorAll("[data-view-target-inline]").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.dataset.viewTargetInline));
+  });
+  if (els.overviewGoServersBtn) els.overviewGoServersBtn.addEventListener("click", () => switchView("servers"));
+  if (els.overviewProbeAllBtn) els.overviewProbeAllBtn.addEventListener("click", () => els.probeAllBtn?.click());
+  if (els.overviewRefreshBtn) {
+    els.overviewRefreshBtn.addEventListener("click", async () => {
+      els.overviewRefreshBtn.disabled = true;
+      try {
+        await Promise.all([renderHealth().catch(() => {}), renderStackInfo().catch(() => {}), fetchAutoSelectStatus().catch(() => {})]);
+      } finally {
+        els.overviewRefreshBtn.disabled = false;
+      }
+    });
+  }
+  document.querySelectorAll('[data-trigger="repair-runtime"]').forEach((btn) => {
+    btn.addEventListener("click", () => els.repairRuntimeBtn?.click());
+  });
+}
+
+function proxyEngineLabel(config) {
+  const cfg = config || {};
+  const proto = String(cfg.protocol || "vless").toLowerCase();
+  if (cfg.engine === "singbox" || cfg.singboxOutbound || cfg.singboxEndpoint) return "sing-box";
+  if (["hysteria2", "hysteria", "tuic", "trojan", "shadowsocks", "anytls", "socks", "http", "ssh", "naive", "wireguard"].includes(proto)) return "sing-box";
+  return "xray";
+}
+
+function normalizeHostForCompare(value) {
+  return String(value || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
+}
+
+function proxyMatchesApplied(proxy, applied) {
+  if (!proxy || !applied) return false;
+  const cfg = proxy.config || {};
+  const pHost = normalizeHostForCompare(cfg.address);
+  const aHost = normalizeHostForCompare(applied.host);
+  const pPort = Number(cfg.port || 0);
+  const aPort = Number(applied.port || 0);
+  const pProto = String(cfg.protocol || "vless").toLowerCase();
+  const aProto = String(applied.protocol || "").toLowerCase();
+  return !!pHost && pHost === aHost && pPort === aPort && (!aProto || pProto === aProto || (pProto === "hysteria2" && aProto === "hy2"));
+}
+
+function setMetricState(node, state) {
+  if (!node) return;
+  const card = node.closest(".metric-card");
+  if (!card) return;
+  card.classList.remove("is-ok", "is-warn", "is-bad");
+  if (state) card.classList.add(`is-${state}`);
+}
+
+function formatRelativeTimestamp(sec) {
+  const ts = Number(sec || 0) * 1000;
+  if (!ts) return currentLang === "ru" ? "не проверялось" : "not checked";
+  const diff = Math.max(0, Date.now() - ts);
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return currentLang === "ru" ? "только что" : "just now";
+  if (min < 60) return currentLang === "ru" ? `${min} мин назад` : `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  return currentLang === "ru" ? `${hr} ч назад` : `${hr} h ago`;
+}
+
+function renderDashboard(payload = lastHealthPayload) {
+  const profile = getActiveProfile();
+  const proxies = profile?.proxies || [];
+  const selected = proxies.find((p) => p.id === profile?.activeProxyId) || null;
+  const enabledRoutes = (profile?.groups || []).filter((g) => g.enabled);
+  if (els.navServerCount) els.navServerCount.textContent = String(proxies.length);
+  if (els.navRouteCount) els.navRouteCount.textContent = String(enabledRoutes.length);
+
+  if (els.selectedProxyName) els.selectedProxyName.textContent = selected?.name || (currentLang === "ru" ? "Сервер не выбран" : "No server selected");
+  if (els.selectedProxyMeta) {
+    els.selectedProxyMeta.textContent = selected
+      ? `${String(selected.config?.protocol || "vless").toUpperCase()} · ${proxyEngineLabel(selected.config)} · ${selected.config?.address || "?"}:${selected.config?.port || "?"}`
+      : "—";
+  }
+
+  const applied = payload?.runtime?.applied || null;
+  const appliedName = proxies.find((p) => proxyMatchesApplied(p, applied))?.name || payload?.runtime?.stateActive?.name || "";
+  const healthStatus = payload?.healthStatus || "unknown";
+  const socksOk = !!payload?.services?.xray?.listenSocks;
+  const captureOk = payload?.checks?.tcpCaptureHook === "ok";
+  const capturePackets = Number(payload?.checks?.tcpCapturePackets || 0);
+  const policyOk = payload?.checks?.policyWanReady === "ok";
+  const egressOk = lastEgressCheck ? !!lastEgressCheck.tunnelOk : null;
+  const runtimeOk = !!payload && healthSeverity(healthStatus) === "ok" && socksOk && captureOk && policyOk && egressOk !== false;
+
+  if (els.runtimeActiveName) els.runtimeActiveName.textContent = appliedName || (applied?.host ? applied.host : (currentLang === "ru" ? "Нет применённого сервера" : "No applied server"));
+  if (els.runtimeProtocolBadge) els.runtimeProtocolBadge.textContent = applied?.protocol ? `${String(applied.protocol).toUpperCase()} · ${applied.engine || "?"}` : "—";
+  if (els.runtimeEndpoint) els.runtimeEndpoint.textContent = applied?.host ? `${applied.host}:${applied.port || "?"}` : "—";
+  if (els.runtimeSummary) {
+    if (!payload) els.runtimeSummary.textContent = currentLang === "ru" ? "Загружаю состояние роутера…" : "Loading router state…";
+    else if (lastEgressCheck && lastEgressCheck.tunnelOk) {
+      const exit = lastEgressCheck.proxyExitIp ? ` · exit ${lastEgressCheck.proxyExitIp}` : "";
+      els.runtimeSummary.textContent = (currentLang === "ru" ? "Реальный HTTPS через VPN подтверждён" : "Real HTTPS through VPN is verified") + exit + ".";
+    }
+    else if (lastEgressCheck && !lastEgressCheck.tunnelOk) {
+      els.runtimeSummary.textContent = (currentLang === "ru" ? "Туннель не проходит HTTPS-проверку: " : "Tunnel fails HTTPS check: ") + (lastEgressCheck.message || lastEgressCheck.status || "unknown");
+    }
+    else if (runtimeOk) els.runtimeSummary.textContent = currentLang === "ru" ? "Runtime поднят: SOCKS слушает, xkeen перехватывает трафик, WAN политики разрешён. Нажми «Проверить активный», чтобы подтвердить реальный HTTPS-выход." : "Runtime is up: SOCKS listens, xkeen captures traffic and policy WAN is permitted. Use Check active to verify real HTTPS egress.";
+    else {
+      const problems = [];
+      if (!socksOk) problems.push("SOCKS 61080");
+      if (!captureOk) problems.push("xkeen capture");
+      if (!policyOk) problems.push("policy WAN");
+      if (healthSeverity(healthStatus) !== "ok") problems.push(healthStatus);
+      els.runtimeSummary.textContent = (currentLang === "ru" ? "Есть проблема: " : "Problem: ") + (problems.join(" · ") || healthStatus);
+    }
+  }
+
+  const mismatch = !!selected && !!applied && !proxyMatchesApplied(selected, applied);
+  if (els.runtimeMismatch) {
+    els.runtimeMismatch.hidden = !mismatch;
+    if (mismatch) els.runtimeMismatch.textContent = currentLang === "ru"
+      ? `В интерфейсе выбран «${selected.name}», но реально применён другой endpoint. Нажми «Сохранить и применить».`
+      : `“${selected.name}” is selected in UI, but a different endpoint is actually applied. Click Save and apply.`;
+  }
+  if (els.selectedProxyNotice) {
+    els.selectedProxyNotice.textContent = mismatch
+      ? (currentLang === "ru" ? "Выбор ещё не применён на роутере." : "Selection is not applied on the router yet.")
+      : (currentLang === "ru" ? "Выбор совпадает с текущим runtime." : "Selection matches the current runtime.");
+  }
+
+  if (els.headerRuntimeChip) {
+    els.headerRuntimeChip.classList.remove("is-neutral", "is-ok", "is-warn", "is-bad");
+    const chipState = !payload ? "is-neutral" : runtimeOk ? "is-ok" : (healthSeverity(healthStatus) === "critical" || !socksOk ? "is-bad" : "is-warn");
+    els.headerRuntimeChip.classList.add(chipState);
+    const span = els.headerRuntimeChip.querySelector("span:last-child");
+    if (span) span.textContent = !payload
+      ? (currentLang === "ru" ? "проверяю…" : "checking…")
+      : runtimeOk ? (currentLang === "ru" ? "runtime работает" : "runtime healthy")
+      : (currentLang === "ru" ? "нужна проверка" : "needs attention");
+  }
+  if (els.navHealthDot) {
+    els.navHealthDot.classList.remove("is-ok", "is-warn", "is-bad");
+    if (payload) els.navHealthDot.classList.add(runtimeOk ? "is-ok" : (healthSeverity(healthStatus) === "critical" ? "is-bad" : "is-warn"));
+  }
+
+  if (els.metricSocks) els.metricSocks.textContent = !payload ? "—" : socksOk ? (currentLang === "ru" ? "слушает" : "listening") : (currentLang === "ru" ? "не поднят" : "down");
+  setMetricState(els.metricSocks, !payload ? null : socksOk ? "ok" : "bad");
+  if (els.metricCapture) els.metricCapture.textContent = !payload ? "—" : captureOk ? `${capturePackets} pkt` : (currentLang === "ru" ? "нет hook" : "no hook");
+  if (els.metricCaptureHint) els.metricCaptureHint.textContent = captureOk ? (currentLang === "ru" ? "счётчик PREROUTING" : "PREROUTING counter") : "TCP PREROUTING";
+  setMetricState(els.metricCapture, !payload ? null : captureOk ? (capturePackets > 0 ? "ok" : "warn") : "bad");
+  if (els.metricPolicy) els.metricPolicy.textContent = !payload ? "—" : policyOk ? (payload?.policy?.wanIface || "WAN ok") : (currentLang === "ru" ? "WAN не разрешён" : "WAN missing");
+  if (els.metricPolicyHint) els.metricPolicyHint.textContent = payload?.policy?.name || "xkeen";
+  setMetricState(els.metricPolicy, !payload ? null : policyOk ? "ok" : "bad");
+
+  const as = autoSelectRuntime || {};
+  if (els.metricAutoSelect) {
+    if (as.phase === "probing") els.metricAutoSelect.textContent = currentLang === "ru" ? "проверяет…" : "probing…";
+    else if (Number.isFinite(as.currentLatencyMs)) els.metricAutoSelect.textContent = `${Math.round(as.currentLatencyMs)} ms`;
+    else els.metricAutoSelect.textContent = profile?.autoSelect?.enabled ? (currentLang === "ru" ? "включён" : "enabled") : (currentLang === "ru" ? "выключен" : "disabled");
+  }
+  if (els.metricAutoSelectHint) els.metricAutoSelectHint.textContent = formatRelativeTimestamp(as.updatedAt);
+  setMetricState(els.metricAutoSelect, as.phase === "error" ? "warn" : profile?.autoSelect?.enabled ? "ok" : null);
+}
 
 function setupPanelCollapse() {
   const panels = document.querySelectorAll(".panel");
@@ -1163,19 +1415,19 @@ function bindTopLevel() {
   els.probeProxyBtn.addEventListener("click", async () => {
     const profile = getActiveProfile();
     if (!profile) return;
-    const config = getActiveProxyConfig(profile);
     els.probeProxyBtn.disabled = true;
-    const toast = showToast(formatMessage(T.toastProbing || "Проверка {addr}:{port}...", { addr: config.address, port: config.port }), { kind: "progress" });
+    const toast = showToast(currentLang === "ru" ? "Проверяю реальный HTTPS через применённый VPN…" : "Checking real HTTPS through the applied VPN…", { kind: "progress" });
     try {
-      const probe = await probeProxy(config);
-      if (probe.ok) {
-        const ipPart = probe.resolvedIp ? `, IP ${probe.resolvedIp}` : "";
-        toast.update(formatMessage(T.probeAvailable, { address: probe.address, port: probe.port, ipPart }), "success");
+      const check = await checkRuntimeEgress();
+      if (check.tunnelOk) {
+        const ip = check.proxyExitIp ? ` · ${check.proxyExitIp}` : "";
+        toast.update((currentLang === "ru" ? "VPN работает" : "VPN works") + ip, "success");
       } else {
-        toast.update(probe.error || T.probeFailed, "error");
+        const status = check.status ? ` [${check.status}]` : "";
+        toast.update(`${check.message || (currentLang === "ru" ? "Туннель не прошёл HTTPS-проверку" : "Tunnel failed HTTPS check")}${status}`, "error");
       }
     } catch (error) {
-      toast.update(`${T.probeError}: ${error.message}`, "error");
+      toast.update(`${currentLang === "ru" ? "Ошибка проверки" : "Check failed"}: ${error.message}`, "error");
     } finally {
       els.probeProxyBtn.disabled = false;
     }
@@ -1238,7 +1490,17 @@ function bindTopLevel() {
       const row = event.target.closest(".active-row");
       if (!row) return;
       const proxyId = row.dataset.proxyId;
-      if (proxyId) setActiveProxy(proxyId);
+      if (!proxyId) return;
+      setActiveProxy(proxyId);
+      const applyButton = event.target.closest("button[data-server-apply]");
+      if (applyButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        // Keep selection and application in one explicit action. This avoids
+        // the common confusion where a radio row changed visually but the
+        // router was still running the previous endpoint.
+        setTimeout(() => els.saveApplyBtn?.click(), 0);
+      }
     });
     // Keyboard nav on the radios (Tab + arrow keys) fires `change` but
     // not `click`, so without this handler a keyboard-only user could
@@ -1469,20 +1731,39 @@ function bindTopLevel() {
             : `The xkeen policy still has no WAN connection${runtimeResult?.policy?.wanIface ? ` ${runtimeResult.policy.wanIface}` : ""}.`)
         : "";
       const egressWarning = runtimeResult?.egressVerified === false
-        ? (runtimeResult?.egressStatus === "same-as-direct"
-            ? (currentLang === "ru"
+        ? (() => {
+            const status = runtimeResult?.egressStatus || "proxy-unreachable";
+            if (status === "same-as-direct") {
+              return currentLang === "ru"
                 ? `Проверка выхода не подтверждает VPN: SOCKS IP ${runtimeResult.proxyExitIp || "?"} совпадает с прямым WAN IP ${runtimeResult.directExitIp || "?"}.`
-                : `Egress check does not confirm VPN: SOCKS IP ${runtimeResult.proxyExitIp || "?"} equals direct WAN IP ${runtimeResult.directExitIp || "?"}.`)
-            : (currentLang === "ru"
-                ? "VPN-конфиг применён, но HTTPS через локальный SOCKS 127.0.0.1:61080 не прошёл. Проверь активный сервер/ключ и логи Xray/sing-box."
-                : "VPN config was applied, but HTTPS through local SOCKS 127.0.0.1:61080 failed. Check the active server/key and Xray/sing-box logs."))
+                : `Egress check does not confirm VPN: SOCKS IP ${runtimeResult.proxyExitIp || "?"} equals direct WAN IP ${runtimeResult.directExitIp || "?"}.`;
+            }
+            if (status === "hy2-auth-404") {
+              return currentLang === "ru"
+                ? "Hysteria2 дошёл до сервера, но сервер отклонил авторизацию (AUTH 404). Выбери другой сервер или обнови подписку/ключ."
+                : "Hysteria2 reached the server, but the server rejected authentication (AUTH 404). Choose another server or refresh the subscription/key.";
+            }
+            if (status === "quic-timeout") {
+              return currentLang === "ru"
+                ? "QUIC не установился: проверь UDP, порт/port-hopping и obfs у активного сервера."
+                : "QUIC did not establish: check UDP, server port/port-hopping and obfs.";
+            }
+            if (status === "tls-error") {
+              return currentLang === "ru"
+                ? "TLS/QUIC handshake не прошёл: проверь SNI, сертификат/insecure, ECH и pin."
+                : "TLS/QUIC handshake failed: check SNI, certificate/insecure, ECH and pin.";
+            }
+            return currentLang === "ru"
+              ? "VPN применён, но реальный HTTPS через SOCKS 127.0.0.1:61080 не прошёл. В «Обзоре» проверь, какой сервер реально применён, затем открой «Диагностику»."
+              : "VPN was applied, but real HTTPS through SOCKS 127.0.0.1:61080 failed. Check the actually applied server on Overview, then open Diagnostics.";
+          })()
         : "";
       const backendRuntimeWarning = egressWarning ? "" : (runtimeResult?.warning || "");
       const runtimeWarning = [policyWarning, egressWarning, backendRuntimeWarning].filter(Boolean).join(" ");
       const combinedWarning = [catalogWarning, runtimeWarning].filter(Boolean).join(" ");
 
       if (combinedWarning) {
-        setApplyDockState(currentLang === "ru" ? "Применено, но есть проблема" : "Applied, but there is a problem", combinedWarning, "warning");
+        setApplyDockState(currentLang === "ru" ? "Применено, но есть проблема" : "Applied, but there is a problem", combinedWarning, "warning", 9000);
         toast.update((currentLang === "ru" ? "Проверь применение: " : "Check apply result: ") + combinedWarning, "error");
       } else {
         const ipHint = runtimeResult?.proxyExitIp
@@ -1510,7 +1791,7 @@ function bindTopLevel() {
     } catch (error) {
       if (isAuthError(error)) showAuthOverlay(AUTH_LOGIN_HINT);
       const stepLabel = step === "catalog" ? "autoselect-catalog" : "runtime";
-      setApplyDockState(currentLang === "ru" ? "Ошибка применения" : "Apply failed", `${stepLabel}: ${error.message}`, "error");
+      setApplyDockState(currentLang === "ru" ? "Ошибка применения" : "Apply failed", `${stepLabel}: ${error.message}`, "error", 10000);
       toast.update(formatMessage(T.saveApplyFailedStepFmt, { msg: T.saveApplyFailed, step: stepLabel, err: error.message }), "error");
       pushDebug(`saveApply failed at step=${step}: ${error.message}`);
     } finally {
@@ -1589,6 +1870,7 @@ async function fetchAutoSelectStatus() {
   }
   renderAutoSelectStatus();
   if (profile) renderActiveProxyList(profile);
+  renderDashboard(lastHealthPayload);
   return autoSelectRuntime;
 }
 
@@ -1715,6 +1997,11 @@ async function renderHealth() {
     els.healthBadges.innerHTML = `<div class="health-error">${escapeHtml(T.healthFetchFailed)}: ${escapeHtml(error.message)}</div>`;
     return;
   }
+  lastHealthPayload = payload;
+  renderDashboard(payload);
+  const activeProfileForRuntime = getActiveProfile();
+  if (activeProfileForRuntime) renderActiveProxyList(activeProfileForRuntime);
+
   const services = payload.services || {};
   const checks = payload.checks || {};
   const sizes = payload.ipsetSize || {};
@@ -1739,11 +2026,13 @@ async function renderHealth() {
   const badges = [
     { name: "xray", svc: services.xray, sev: services.xray?.running ? (fdSev !== "ok" ? fdSev : "ok") : "critical", extras: [
       services.xray?.listenTcp ? "tcp 61219" : null,
+      services.xray?.listenSocks ? "socks 61080" : null,
       services.xray?.listenRelayUdp ? "relay 62640" : null,
       fdLabel || null
     ] },
     { name: "sing-box", svc: services.singbox, sev: services.singbox?.running ? "ok" : "critical", extras: [
-      services.singbox?.listenUdp ? "udp 61221" : null
+      services.singbox?.listenUdp ? "udp 61221" : null,
+      services.singbox?.listenBridge ? "bridge 61225" : null
     ] },
     { name: "self-heal", svc: services.selfheal, sev: services.selfheal?.running ? "ok" : "critical", extras: [] },
     { name: "auto-select", svc: services.autoselect, sev: services.autoselect?.running ? "ok" : "warn", extras: [] }
@@ -2197,6 +2486,18 @@ async function probeProxy(config) {
   return await parseResponseOrThrow(response);
 }
 
+async function checkRuntimeEgress() {
+  const response = await fetchWithTimeout(EGRESS_CHECK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: "{}"
+  }, 18000);
+  const payload = await parseResponseOrThrow(response);
+  lastEgressCheck = payload;
+  renderDashboard(lastHealthPayload);
+  return payload;
+}
+
 async function loginToRouter(login, password) {
   const safeLogin = String(login || "").trim();
   const safePassword = String(password || "");
@@ -2242,6 +2543,8 @@ function render() {
 
   renderGroups();
   renderPreview();
+  renderDashboard(lastHealthPayload);
+  renderViewHeader();
 }
 
 function renderProfiles() {
@@ -3102,6 +3405,7 @@ function renderActiveProxyList(profile) {
     return;
   }
   const activeId = profile.activeProxyId;
+  const applied = lastHealthPayload?.runtime?.applied || null;
   for (const p of visibleProxies) {
     const sub = (profile.subscriptions || []).find((s) => s.id === p.source);
     const srcLabel = sub ? sub.name : (T.manualKeySrc || "manual");
@@ -3111,19 +3415,36 @@ function renderActiveProxyList(profile) {
           ? `<span class="latency-chip ${latencyClass(latency.latencyMs)} ${p.id === autoSelectRuntime.bestId ? "best" : ""}">${Math.round(latency.latencyMs)} ms</span>`
           : `<span class="latency-chip bad">${escapeHtml(T.autoSelectOffline || "offline")}</span>`)
       : `<span class="latency-chip">…</span>`;
+    const isApplied = proxyMatchesApplied(p, applied);
+    const isSelected = p.id === activeId;
+    const pendingApply = isSelected && !isApplied;
+    const tunnelChip = isApplied && lastEgressCheck
+      ? (lastEgressCheck.tunnelOk
+          ? `<span class="tunnel-chip good">VPN OK</span>`
+          : `<span class="tunnel-chip bad">${escapeHtml(lastEgressCheck.status || "VPN FAIL")}</span>`)
+      : "";
+    const protocolLabel = String(p.config?.protocol || "vless").toUpperCase();
+    const engineLabel = proxyEngineLabel(p.config);
     const li = document.createElement("li");
-    li.className = "active-row" + (p.id === activeId ? " selected" : "");
+    li.className = "active-row" + (p.id === activeId ? " selected" : "") + (isApplied ? " applied" : "");
     li.dataset.proxyId = p.id;
     li.innerHTML = `
-      <input type="radio" name="activeProxy" value="${p.id}" ${p.id === activeId ? "checked" : ""} class="active-radio-input">
+      <input type="radio" name="activeProxy" value="${p.id}" ${p.id === activeId ? "checked" : ""} class="active-radio-input" aria-label="${escapeHtml(p.name)}">
       <div class="active-info">
         <div class="active-name">${escapeHtml(p.name)}</div>
         <div class="active-meta">
-          <span>${escapeHtml(srcLabel)}</span>
+          <span class="protocol-chip">${escapeHtml(protocolLabel)}</span>
+          <span class="engine-chip">${escapeHtml(engineLabel)}</span>
+          <span>${escapeHtml(p.config?.address || "?")}:${escapeHtml(p.config?.port || "?")}</span>
           <span>·</span>
-          <span class="card-badge">${escapeHtml(securityBadge(p.config))}</span>
-          <span>${escapeHtml(p.config.address)}:${p.config.port}</span>
+          <span>${escapeHtml(srcLabel)}</span>
         </div>
+      </div>
+      <div class="server-status-stack">
+        ${tunnelChip}
+        ${isApplied ? `<span class="applied-chip">${currentLang === "ru" ? "применён" : "applied"}</span>` : ""}
+        ${pendingApply ? `<button type="button" class="server-apply-btn" data-server-apply="1">${currentLang === "ru" ? "Применить" : "Apply"}</button>` : ""}
+        ${latencyHtml}
       </div>
     `;
     els.activeProxyList.appendChild(li);
@@ -3278,6 +3599,7 @@ function setActiveProxy(proxyId) {
   persistState();
   renderActiveProxyList(profile);
   renderQuickStart(profile);
+  renderDashboard(lastHealthPayload);
 }
 
 async function fetchSubscriptionViaBackend(url) {
