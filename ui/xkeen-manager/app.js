@@ -14,11 +14,20 @@ const ROUTER_FETCH_TIMEOUT_MS = 20000;
 // honour that too.
 async function parseResponseOrThrow(response) {
   if (!response.ok) {
-    // Try to read the body for extra context, but don't rely on it being JSON.
+    // Surface the backend's concrete error instead of dumping a raw JSON
+    // object into the action bar. This is especially important for apply:
+    // policy/WAN/iptables validation failures should tell the user what broke.
     let extra = "";
     try {
       const raw = await response.text();
-      if (raw) extra = ": " + raw.slice(0, 200);
+      if (raw) {
+        try {
+          const payload = JSON.parse(raw);
+          extra = payload?.error ? `: ${payload.error}` : `: ${raw.slice(0, 200)}`;
+        } catch {
+          extra = `: ${raw.slice(0, 200)}`;
+        }
+      }
     } catch { /* ignore */ }
     throw new Error(response.status === 401 ? AUTH_REQUIRED_MESSAGE : `HTTP ${response.status}${extra}`);
   }
@@ -296,6 +305,7 @@ const LOCALES = {
     healthCheckIpRule: "ip rule с маской 0x111/0x111",
     healthCheckUdpIpset: "ipset xkeen_udp_route существует",
     healthCheckBypassIpset: "ipset xkeen_bypass существует",
+    healthCheckPolicyWan: "WAN-подключение разрешено в политике xkeen",
     healthCheckPass: "ок",
     healthCheckFail: "сбой",
     healthCheckNa: "не нужно",
@@ -321,9 +331,9 @@ const LOCALES = {
     stackVpnSection: "VPN",
     stackVpnHost: "сервер", stackVpnEndpointIp: "IP сервера", stackVpnExitIp: "VPN exit IP", stackVpnSni: "Reality SNI",
     stackNetSection: "Сеть",
-    stackWanIface: "WAN-интерфейс", stackWanIp: "WAN IP", stackGw: "default gateway", stackLan: "LAN сеть",
+    stackWanIface: "WAN-интерфейс", stackWanIp: "WAN IP", stackPublicIp: "Публичный WAN IP", stackGw: "default gateway", stackLan: "LAN сеть",
     stackXkeenSection: "xkeen",
-    stackPolicy: "Keenetic policy", stackMark: "mark", stackTproxyPort: "TPROXY UDP", stackRedirectPort: "REDIRECT TCP", stackSsRelay: "SS-relay",
+    stackPolicy: "Keenetic policy", stackPolicyWan: "WAN в политике", stackMark: "mark", stackTproxyPort: "TPROXY UDP", stackRedirectPort: "REDIRECT TCP", stackSsRelay: "SS-relay",
     stackRuntimeSection: "Runtime",
     stackSelfhealInterval: "интервал self-heal", stackLogRotate: "ротация логов", stackLogRotateValue: "раз в сутки", stackBackupRetention: "хранение бэкапов", stackBackupRetentionValue: "{n} последних копий", stackFdThresh: "FD warn / critical",
     stackResourcesSection: "Ресурсы",
@@ -565,6 +575,7 @@ const LOCALES = {
     healthCheckIpRule: "ip rule with mask 0x111/0x111",
     healthCheckUdpIpset: "xkeen_udp_route ipset present",
     healthCheckBypassIpset: "xkeen_bypass ipset present",
+    healthCheckPolicyWan: "WAN connection permitted in xkeen policy",
     healthCheckPass: "ok",
     healthCheckFail: "fail",
     healthCheckNa: "not needed",
@@ -590,9 +601,9 @@ const LOCALES = {
     stackVpnSection: "VPN",
     stackVpnHost: "server", stackVpnEndpointIp: "server IP", stackVpnExitIp: "VPN exit IP", stackVpnSni: "Reality SNI",
     stackNetSection: "Network",
-    stackWanIface: "WAN interface", stackWanIp: "WAN IP", stackGw: "default gateway", stackLan: "LAN net",
+    stackWanIface: "WAN interface", stackWanIp: "WAN IP", stackPublicIp: "Public WAN IP", stackGw: "default gateway", stackLan: "LAN net",
     stackXkeenSection: "xkeen",
-    stackPolicy: "Keenetic policy", stackMark: "mark", stackTproxyPort: "TPROXY UDP", stackRedirectPort: "REDIRECT TCP", stackSsRelay: "SS-relay",
+    stackPolicy: "Keenetic policy", stackPolicyWan: "Policy WAN", stackMark: "mark", stackTproxyPort: "TPROXY UDP", stackRedirectPort: "REDIRECT TCP", stackSsRelay: "SS-relay",
     stackRuntimeSection: "Runtime",
     stackSelfhealInterval: "self-heal interval", stackLogRotate: "log rotation", stackLogRotateValue: "once a day", stackBackupRetention: "backup retention", stackBackupRetentionValue: "last {n} files", stackFdThresh: "FD warn / critical",
     stackResourcesSection: "Resources",
@@ -800,6 +811,7 @@ const els = {
   logsPreview: document.getElementById("logsPreview"),
   logsPreviewWrap: document.getElementById("logsPreviewWrap"),
   logsCopyBtn: document.getElementById("logsCopyBtn"),
+  actionDock: document.getElementById("actionDock"),
   actionDockTitle: document.getElementById("actionDockTitle"),
   actionDockHint: document.getElementById("actionDockHint"),
   quickApplyBtn: document.getElementById("quickApplyBtn")
@@ -879,9 +891,35 @@ async function bootstrap() {
   }
 }
 
-function setApplyDockState(title, hint) {
+let applyDockTimer = null;
+
+function resetApplyDock() {
+  if (applyDockTimer) {
+    clearTimeout(applyDockTimer);
+    applyDockTimer = null;
+  }
+  if (els.actionDockTitle) els.actionDockTitle.textContent = T.actionDockTitle;
+  if (els.actionDockHint) els.actionDockHint.textContent = T.actionDockHint;
+  if (els.actionDock) {
+    els.actionDock.classList.remove("is-busy", "is-success", "is-warning", "is-error");
+    els.actionDock.classList.add("is-idle");
+  }
+}
+
+function setApplyDockState(title, hint, mode, settleMs) {
+  if (applyDockTimer) {
+    clearTimeout(applyDockTimer);
+    applyDockTimer = null;
+  }
   if (els.actionDockTitle && title) els.actionDockTitle.textContent = title;
   if (els.actionDockHint && hint) els.actionDockHint.textContent = hint;
+  if (els.actionDock) {
+    els.actionDock.classList.remove("is-idle", "is-busy", "is-success", "is-warning", "is-error");
+    els.actionDock.classList.add(`is-${mode || "busy"}`);
+  }
+  if (Number(settleMs) > 0) {
+    applyDockTimer = setTimeout(resetApplyDock, Number(settleMs));
+  }
 }
 
 function bindTopLevel() {
@@ -1397,7 +1435,7 @@ function bindTopLevel() {
     els.saveApplyBtn.disabled = true;
     if (els.quickApplyBtn) els.quickApplyBtn.disabled = true;
     const toast = showToast(T.toastSavingApplying || "Сохранение и применение...", { kind: "progress" });
-    setApplyDockState(currentLang === "ru" ? "Применяю VPN…" : "Applying VPN…", currentLang === "ru" ? "Этап 1/2: проверка конфигов, перезапуск и восстановление перехвата." : "Step 1/2: config validation, restart and traffic-capture repair.");
+    setApplyDockState(currentLang === "ru" ? "Применяю VPN…" : "Applying VPN…", currentLang === "ru" ? "Этап 1/2: проверка конфигов, перезапуск, ремонт политики xkeen и проверка выхода." : "Step 1/2: config validation, restart, xkeen policy repair and egress verification.", "busy");
     let step = "runtime";
     try {
       // One transactional backend call validates the future xray + sing-box
@@ -1406,10 +1444,10 @@ function bindTopLevel() {
       // This replaces the old five-CGI pipeline where self-heal/auto-select
       // could grab the lock between steps and make the UI appear to hang.
       toast.update("1/2 · " + (currentLang === "ru" ? "Проверяю и применяю VPN…" : "Validating and applying VPN…"), "progress");
-      await saveRemoteRuntimeBundle();
+      const runtimeResult = await saveRemoteRuntimeBundle();
 
       step = "catalog";
-      setApplyDockState(currentLang === "ru" ? "VPN уже применён" : "VPN is already applied", currentLang === "ru" ? "Этап 2/2: обновляю каталог пингов для автоматического выбора." : "Step 2/2: updating the latency catalog for automatic selection.");
+      setApplyDockState(currentLang === "ru" ? "VPN уже применён" : "VPN is already applied", currentLang === "ru" ? "Этап 2/2: обновляю каталог пингов для автоматического выбора." : "Step 2/2: updating the latency catalog for automatic selection.", "busy");
       toast.update("2/2 · " + (currentLang === "ru" ? "Обновляю список для авто-выбора…" : "Updating auto-selection catalog…"), "progress");
       let catalogWarning = "";
       try {
@@ -1425,11 +1463,32 @@ function bindTopLevel() {
       persistState();
       lastKnownVpnIp = null;
       EXIT_IP_LOG.length = 0;
-      if (catalogWarning) {
-        setApplyDockState(currentLang === "ru" ? "VPN применён с предупреждением" : "VPN applied with a warning", catalogWarning);
-        toast.update((currentLang === "ru" ? "VPN применён, но авто-выбор пока без нового каталога: " : "VPN applied, but auto-select catalog update failed: ") + catalogWarning, "error");
+      const policyWarning = runtimeResult?.policy?.wanReady === false
+        ? (currentLang === "ru"
+            ? `У политики xkeen всё ещё нет WAN-подключения${runtimeResult?.policy?.wanIface ? ` ${runtimeResult.policy.wanIface}` : ""}.`
+            : `The xkeen policy still has no WAN connection${runtimeResult?.policy?.wanIface ? ` ${runtimeResult.policy.wanIface}` : ""}.`)
+        : "";
+      const egressWarning = runtimeResult?.egressVerified === false
+        ? (runtimeResult?.egressStatus === "same-as-direct"
+            ? (currentLang === "ru"
+                ? `Проверка выхода не подтверждает VPN: SOCKS IP ${runtimeResult.proxyExitIp || "?"} совпадает с прямым WAN IP ${runtimeResult.directExitIp || "?"}.`
+                : `Egress check does not confirm VPN: SOCKS IP ${runtimeResult.proxyExitIp || "?"} equals direct WAN IP ${runtimeResult.directExitIp || "?"}.`)
+            : (currentLang === "ru"
+                ? "VPN-конфиг применён, но HTTPS через локальный SOCKS 127.0.0.1:61080 не прошёл. Проверь активный сервер/ключ и логи Xray/sing-box."
+                : "VPN config was applied, but HTTPS through local SOCKS 127.0.0.1:61080 failed. Check the active server/key and Xray/sing-box logs."))
+        : "";
+      const backendRuntimeWarning = egressWarning ? "" : (runtimeResult?.warning || "");
+      const runtimeWarning = [policyWarning, egressWarning, backendRuntimeWarning].filter(Boolean).join(" ");
+      const combinedWarning = [catalogWarning, runtimeWarning].filter(Boolean).join(" ");
+
+      if (combinedWarning) {
+        setApplyDockState(currentLang === "ru" ? "Применено, но есть проблема" : "Applied, but there is a problem", combinedWarning, "warning");
+        toast.update((currentLang === "ru" ? "Проверь применение: " : "Check apply result: ") + combinedWarning, "error");
       } else {
-        setApplyDockState(currentLang === "ru" ? "Применено" : "Applied", currentLang === "ru" ? "Xray/sing-box перезапущены, TCP-перехват xkeen установлен. Пинги серверов запускаются отдельно." : "Xray/sing-box restarted and the xkeen TCP capture hook is installed. Server latency probing runs separately.");
+        const ipHint = runtimeResult?.proxyExitIp
+          ? (currentLang === "ru" ? `VPN exit IP: ${runtimeResult.proxyExitIp}` : `VPN exit IP: ${runtimeResult.proxyExitIp}`)
+          : (currentLang === "ru" ? "Xray/sing-box и перехват xkeen работают." : "Xray/sing-box and the xkeen capture hook are running.");
+        setApplyDockState(currentLang === "ru" ? "Применено ✓" : "Applied ✓", ipHint, "success", 4500);
         toast.update(T.saveApplyDone, "success");
         const profile = getActiveProfile();
         if (profile?.autoSelect?.enabled) {
@@ -1445,7 +1504,7 @@ function bindTopLevel() {
     } catch (error) {
       if (isAuthError(error)) showAuthOverlay(AUTH_LOGIN_HINT);
       const stepLabel = step === "catalog" ? "autoselect-catalog" : "runtime";
-      setApplyDockState(currentLang === "ru" ? "Ошибка применения" : "Apply failed", `${stepLabel}: ${error.message}`);
+      setApplyDockState(currentLang === "ru" ? "Ошибка применения" : "Apply failed", `${stepLabel}: ${error.message}`, "error");
       toast.update(formatMessage(T.saveApplyFailedStepFmt, { msg: T.saveApplyFailed, step: stepLabel, err: error.message }), "error");
       pushDebug(`saveApply failed at step=${step}: ${error.message}`);
     } finally {
@@ -1656,6 +1715,7 @@ async function renderHealth() {
   const fd = payload.xrayFd || {};
   const ct = payload.conntrack || {};
   const vpn = payload.vpnTunnel || {};
+  const policy = payload.policy || {};
   const overallStatus = payload.healthStatus || "ok";
   const overallSev = healthSeverity(overallStatus);
 
@@ -1744,9 +1804,15 @@ async function renderHealth() {
   if (els.policyTrafficHint) {
     const captureStatus = normStatus(checks.tcpCaptureHook);
     const capturePackets = Number(checks.tcpCapturePackets || 0);
-    els.policyTrafficHint.classList.toggle("runtime-warning", captureStatus !== "ok" || capturePackets === 0);
-    els.policyTrafficHint.classList.toggle("runtime-ok", captureStatus === "ok" && capturePackets > 0);
-    if (captureStatus !== "ok") {
+    const policyWanStatus = normStatus(checks.policyWanReady);
+    const policyRuntimeOk = policyWanStatus === "ok" && captureStatus === "ok" && capturePackets > 0;
+    els.policyTrafficHint.classList.toggle("runtime-warning", !policyRuntimeOk);
+    els.policyTrafficHint.classList.toggle("runtime-ok", policyRuntimeOk);
+    if (policyWanStatus !== "ok") {
+      els.policyTrafficHint.textContent = currentLang === "ru"
+        ? `У политики xkeen нет WAN-подключения${policy.wanIface ? ` (${policy.wanIface})` : ""}. Клиенты назначены правильно, но policy routing неполный. Нажми «Сохранить и применить» — AntiGoblin попробует починить policy автоматически.`
+        : `The xkeen policy has no WAN connection${policy.wanIface ? ` (${policy.wanIface})` : ""}. Client assignment is correct, but policy routing is incomplete. Click Save and apply so AntiGoblin can repair it automatically.`;
+    } else if (captureStatus !== "ok") {
       els.policyTrafficHint.textContent = currentLang === "ru"
         ? "Перехват xkeen сейчас НЕ установлен. Нажми «Сохранить и применить» или «Рестарт runtime»; если ошибка останется — проверь политику xkeen в Keenetic."
         : "The xkeen capture hook is NOT installed. Click Save and apply or Repair runtime; if it still fails, check the xkeen policy in Keenetic.";
@@ -1762,6 +1828,7 @@ async function renderHealth() {
   }
 
   const checkRows = [
+    { label: T.healthCheckPolicyWan, status: normStatus(checks.policyWanReady), extra: policy.wanIface || policy.name || null },
     { label: T.healthCheckTcpCapture, status: normStatus(checks.tcpCaptureHook), extra: formatMessage(T.healthCapturePacketsFmt || "{n}", { n: checks.tcpCapturePackets || 0 }) },
     { label: T.healthCheckTproxy, status: normStatus(checks.tproxyRuleAtEnd) },
     { label: T.healthCheckIpRule, status: normStatus(checks.ipRuleMasked) },
@@ -2013,6 +2080,7 @@ async function renderStackInfo() {
       rows: [
         [T.stackWanIface || "WAN-интерфейс", net.wanIface || "—"],
         [T.stackWanIp || "WAN IP", net.wanIp || "—"],
+        [T.stackPublicIp || "Публичный WAN IP", net.publicExitIp || "—"],
         [T.stackGw || "Default gateway", net.gateway || "—"],
         [T.stackLan || "LAN сеть", net.lanNet || "—"]
       ]
@@ -2021,6 +2089,7 @@ async function renderStackInfo() {
       title: T.stackXkeenSection || "xkeen",
       rows: [
         [T.stackPolicy || "policy", policyLabel],
+        [T.stackPolicyWan || "WAN в политике", xk.wanReady ? `${xk.wanIface || "?"} ✓` : `${xk.wanIface || "—"} ✗`],
         [T.stackMark || "mark", xk.mark ? `0x${xk.mark}` : "—"],
         [T.stackTproxyPort || "TPROXY UDP", String(xk.tproxyUdp || "—")],
         [T.stackRedirectPort || "REDIRECT TCP", String(xk.redirectTcp || "—")],

@@ -336,13 +336,89 @@ xkeen_next_policy_name() {
   '
 }
 
-xkeen_ensure_policy() {
-  if ndmc -c 'show ip policy' 2>/dev/null | grep -Eq "$XKEEN_POLICY_DESC_RE"; then
-    return 0
-  fi
+xkeen_policy_name() {
+  # Return the internal PolicyNN name for the policy whose description is
+  # xkeen. Keenetic UI shows the description ("xkeen"), while commands that
+  # repair the policy require the internal name.
+  ndmc -c 'show ip policy' 2>/dev/null | /opt/bin/awk -v pat="$XKEEN_POLICY_DESC_RE" '
+    function extract_name(line) {
+      if (match(line, /name[[:space:]]*[=:][[:space:]]*[^,[:space:]]+/)) {
+        val=substr(line, RSTART, RLENGTH)
+        sub(/^name[[:space:]]*[=:][[:space:]]*/, "", val)
+        gsub(/"/, "", val)
+        return val
+      }
+      return ""
+    }
+    /^[[:space:]]*policy,/ {
+      pending_name=extract_name($0)
+      if ($0 ~ pat && pending_name != "") { print pending_name; exit }
+      next
+    }
+    /^[[:space:]]*name:/ {
+      pending_name=$0
+      sub(/^[[:space:]]*name:[[:space:]]*/, "", pending_name)
+      gsub(/"/, "", pending_name)
+      next
+    }
+    $0 ~ pat && pending_name != "" { print pending_name; exit }
+  '
+}
 
+xkeen_policy_has_wan() {
+  POLICY_NAME="$1"
+  WAN_IFACE="$2"
+  [ -n "$POLICY_NAME" ] && [ -n "$WAN_IFACE" ] || return 1
+
+  # `show running-config` is normally block-shaped on KeeneticOS:
+  #
+  #   ip policy Policy42
+  #       description xkeen
+  #       permit global ISP
+  #   !
+  #
+  # Some builds/tools flatten commands to one line, so accept both shapes.
+  # The previous implementation grepped only for
+  # `ip policy Policy42 permit global ISP`, which made a correctly repaired
+  # block look broken forever and caused Save & Apply to fail after adding
+  # the WAN. Track the last permit/no-permit inside the matching block.
+  ndmc -c 'show running-config' 2>/dev/null | /opt/bin/awk \
+    -v want_policy="$POLICY_NAME" -v want_wan="$WAN_IFACE" '
+      function clean(v) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); gsub(/"/, "", v); return v }
+      $1 == "ip" && $2 == "policy" {
+        in_policy = ($3 == want_policy)
+        if (in_policy && $4 == "permit" && $5 == "global" && clean($6) == want_wan) state = 1
+        if (in_policy && $4 == "no" && $5 == "permit" && $6 == "global" && clean($7) == want_wan) state = 0
+        next
+      }
+      in_policy && $1 == "permit" && $2 == "global" && clean($3) == want_wan { state = 1; next }
+      in_policy && $1 == "no" && $2 == "permit" && $3 == "global" && clean($4) == want_wan { state = 0; next }
+      in_policy && $1 == "!" { in_policy = 0 }
+      END { exit state == 1 ? 0 : 1 }
+    '
+}
+
+xkeen_ensure_policy() {
   WAN_IFACE="$(xkeen_default_wan_iface)"
   [ -n "$WAN_IFACE" ] || return 1
+
+  if ndmc -c 'show ip policy' 2>/dev/null | grep -Eq "$XKEEN_POLICY_DESC_RE"; then
+    POLICY_NAME="$(xkeen_policy_name)"
+    [ -n "$POLICY_NAME" ] || return 1
+
+    # Older AntiGoblin/manual installs can leave an xkeen policy that exists
+    # and has a mark, but has no underlying Internet connection assigned.
+    # Repair that policy in place instead of treating "policy exists" as
+    # sufficient. This matches the blank Connection column seen in Keenetic UI.
+    if ! xkeen_policy_has_wan "$POLICY_NAME" "$WAN_IFACE"; then
+      xkeen_runtime_log "policy_repair name=$POLICY_NAME add_wan=$WAN_IFACE"
+      ndmc -c "ip policy $POLICY_NAME permit global $WAN_IFACE" >/dev/null 2>&1 || return 1
+      ndmc -c "system configuration save" >/dev/null 2>&1 || true
+      sleep 1
+      xkeen_policy_has_wan "$POLICY_NAME" "$WAN_IFACE" || return 1
+    fi
+    return 0
+  fi
 
   POLICY_NAME="$(xkeen_next_policy_name)"
   [ -n "$POLICY_NAME" ] || POLICY_NAME="Policy42"
@@ -353,7 +429,8 @@ xkeen_ensure_policy() {
   ndmc -c "ip policy $POLICY_NAME permit global $WAN_IFACE" >/dev/null 2>&1 || return 1
   ndmc -c "system configuration save" >/dev/null 2>&1 || true
   sleep 1
-  ndmc -c 'show ip policy' 2>/dev/null | grep -Eq "$XKEEN_POLICY_DESC_RE"
+  ndmc -c 'show ip policy' 2>/dev/null | grep -Eq "$XKEEN_POLICY_DESC_RE" \
+    && xkeen_policy_has_wan "$POLICY_NAME" "$WAN_IFACE"
 }
 
 xkeen_ensure_mark() {

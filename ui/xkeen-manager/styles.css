@@ -1469,10 +1469,9 @@ button:focus-visible, .setup-step:focus-visible, summary:focus-visible {
 .action-dock {
   position: fixed;
   z-index: 40;
-  left: 50%;
+  right: 18px;
   bottom: 14px;
-  transform: translateX(-50%);
-  width: min(calc(100% - 28px), 980px);
+  width: min(calc(100% - 36px), 720px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1483,7 +1482,22 @@ button:focus-visible, .setup-step:focus-visible, summary:focus-visible {
   background: rgba(13,22,33,0.92);
   backdrop-filter: blur(16px);
   box-shadow: 0 16px 50px rgba(0,0,0,.48);
+  transition: width .2s ease, padding .2s ease, border-color .2s ease, background .2s ease;
 }
+/* Do not leave a huge status plaque over the page. In the normal state the
+   dock is only the Apply button; it expands while work is running or when a
+   warning/error needs attention. Successful status stays expanded briefly,
+   then JS returns it to this compact state. */
+.action-dock.is-idle {
+  width: auto;
+  padding: 8px;
+  border-color: rgba(79,195,161,0.22);
+}
+.action-dock.is-idle .action-dock-copy { display: none; }
+.action-dock.is-busy { border-color: rgba(90,180,255,.44); }
+.action-dock.is-success { border-color: rgba(79,195,161,.58); }
+.action-dock.is-warning { border-color: rgba(240,187,79,.62); background: rgba(30,27,18,.94); }
+.action-dock.is-error { border-color: rgba(244,95,103,.65); background: rgba(34,18,22,.95); }
 .action-dock-copy { min-width: 0; }
 .action-dock-copy strong { display: block; font-size: 13px; }
 .action-dock-copy span {
@@ -1494,6 +1508,13 @@ button:focus-visible, .setup-step:focus-visible, summary:focus-visible {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.action-dock.is-warning .action-dock-copy span,
+.action-dock.is-error .action-dock-copy span {
+  max-height: 4.2em;
+  overflow: auto;
+  text-overflow: clip;
+  white-space: normal;
 }
 .action-dock .primary {
   flex: 0 0 auto;
@@ -1519,11 +1540,14 @@ button:focus-visible, .setup-step:focus-visible, summary:focus-visible {
   .proxy-actions { width: 100%; }
   .proxy-actions button { flex: 1 1 auto; }
   .action-dock {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100% - 16px);
     align-items: stretch;
     flex-direction: column;
     gap: 8px;
-    bottom: 8px;
   }
+  .action-dock.is-idle { width: auto; }
   .action-dock-copy { display: none; }
   .action-dock .primary { width: 100%; min-width: 0; }
 }

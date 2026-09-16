@@ -534,6 +534,21 @@ emit_health() {
   BYPASS_IPSET_OK="fail"
   ipset list xkeen_bypass -terse >/dev/null 2>&1 && BYPASS_IPSET_OK="ok"
 
+  POLICY_NAME_HEALTH=""
+  POLICY_WAN_IFACE_HEALTH=""
+  POLICY_WAN_READY_HEALTH="fail"
+  if type xkeen_policy_name >/dev/null 2>&1; then
+    POLICY_NAME_HEALTH="$(xkeen_policy_name 2>/dev/null)"
+  fi
+  if type xkeen_default_wan_iface >/dev/null 2>&1; then
+    POLICY_WAN_IFACE_HEALTH="$(xkeen_default_wan_iface 2>/dev/null)"
+  fi
+  if type xkeen_policy_has_wan >/dev/null 2>&1 \
+     && [ -n "$POLICY_NAME_HEALTH" ] && [ -n "$POLICY_WAN_IFACE_HEALTH" ] \
+     && xkeen_policy_has_wan "$POLICY_NAME_HEALTH" "$POLICY_WAN_IFACE_HEALTH"; then
+    POLICY_WAN_READY_HEALTH="ok"
+  fi
+
   UDP_IPSET_SIZE=0
   if [ "$UDP_IPSET_OK" = "ok" ]; then
     UDP_IPSET_SIZE="$(ipset list xkeen_udp_route 2>/dev/null | /opt/bin/awk '/^Members:/ { m=1; next } m && NF { c++ } END { print c+0 }')"
@@ -649,6 +664,9 @@ emit_health() {
     --arg ip_rule_masked "$IP_RULE_MASKED" \
     --arg udp_ipset_ok "$UDP_IPSET_OK" \
     --arg bypass_ipset_ok "$BYPASS_IPSET_OK" \
+    --arg policy_wan_ready "$POLICY_WAN_READY_HEALTH" \
+    --arg policy_name "$POLICY_NAME_HEALTH" \
+    --arg policy_wan_iface "$POLICY_WAN_IFACE_HEALTH" \
     --arg tcp_capture_ok "$TCP_CAPTURE_OK" \
     --argjson tcp_capture_packets "$TCP_CAPTURE_PACKETS" \
     --argjson udp_ipset_size "$UDP_IPSET_SIZE" \
@@ -679,9 +697,11 @@ emit_health() {
         ipRuleMasked:      $ip_rule_masked,
         udpIpsetExists:    $udp_ipset_ok,
         bypassIpsetExists: $bypass_ipset_ok,
+        policyWanReady: $policy_wan_ready,
         tcpCaptureHook: $tcp_capture_ok,
         tcpCapturePackets: $tcp_capture_packets
       },
+      policy: { name: $policy_name, wanIface: $policy_wan_iface },
       ipsetSize: { udpRoute: $udp_ipset_size, bypass: $bypass_ipset_size },
       xrayFd: { count: $xray_fd, limit: $xray_fd_limit },
       conntrack: { count: $ct_count, max: $ct_max },
@@ -747,16 +767,41 @@ emit_logs() {
   exit 0
 }
 
-probe_proxy_exit_ip() {
-  # Test the actual active outbound, not the VPN server endpoint. The SOCKS
-  # inbound is explicitly routed to tag vless-reality, so this works for
-  # both native Xray VLESS/VMess and sing-box-backed protocols.
+probe_public_ip_via() {
+  MODE="$1"
+  LIMIT="${2:-2}"
+  case "$LIMIT" in ''|*[!0-9]*) LIMIT=2 ;; esac
+  [ "$LIMIT" -ge 1 ] 2>/dev/null || LIMIT=1
   [ -x /opt/bin/curl ] || { printf ''; return 0; }
-  EXIT_IP="$('/opt/bin/curl' -fsS --socks5-hostname 127.0.0.1:61080 --connect-timeout 3 --max-time 6 https://api.ipify.org 2>/dev/null | tr -d '\r\n ' | head -c 80)"
-  case "$EXIT_IP" in
-    ''|*[!0-9a-fA-F:.]*) printf '' ;;
-    *) printf '%s' "$EXIT_IP" ;;
-  esac
+  # Keep interactive diagnostics bounded. Stack-info uses one service so
+  # opening Diagnostics never feels stuck; Apply can try two independent
+  # services before deciding that the active SOCKS path is unreachable.
+  COUNT=0
+  for URL in https://api.ipify.org https://icanhazip.com; do
+    COUNT=$((COUNT + 1))
+    if [ "$MODE" = "proxy" ]; then
+      EXIT_IP="$(/opt/bin/curl -4 -fsS --socks5-hostname 127.0.0.1:61080 --connect-timeout 2 --max-time 5 "$URL" 2>/dev/null | tr -d '\r\n ' | head -c 80)"
+    else
+      EXIT_IP="$(/opt/bin/curl -4 -fsS --connect-timeout 2 --max-time 5 "$URL" 2>/dev/null | tr -d '\r\n ' | head -c 80)"
+    fi
+    case "$EXIT_IP" in
+      ''|*[!0-9.]*) ;;
+      *) printf '%s' "$EXIT_IP"; return 0 ;;
+    esac
+    [ "$COUNT" -ge "$LIMIT" ] && break
+  done
+  printf ''
+}
+
+probe_proxy_exit_ip() {
+  # Test the actual active outbound, not merely the VPN endpoint TCP port.
+  # SOCKS-in is pinned to the stable vless-reality tag, so this verifies
+  # VLESS/VMess and sing-box-backed protocols using the same real HTTPS test.
+  probe_public_ip_via proxy "${1:-2}"
+}
+
+probe_direct_exit_ip() {
+  probe_public_ip_via direct "${1:-2}"
 }
 
 emit_stack_info() {
@@ -784,7 +829,8 @@ emit_stack_info() {
     fi
   fi
 
-  VPN_EXIT_IP="$(probe_proxy_exit_ip)"
+  VPN_EXIT_IP="$(probe_proxy_exit_ip 1)"
+  DIRECT_EXIT_IP="$(probe_direct_exit_ip 1)"
 
   WAN_IFACE="$(ip route show default 2>/dev/null | /opt/bin/awk '/^default/{print $5; exit}')"
   WAN_IP=""
@@ -819,6 +865,15 @@ emit_stack_info() {
     XKEEN_MARK_VAL="$(xkeen_get_mark 2>/dev/null)"
   else
     XKEEN_MARK_VAL=""
+  fi
+
+  POLICY_WAN_IFACE=""
+  POLICY_WAN_READY=false
+  if type xkeen_default_wan_iface >/dev/null 2>&1; then
+    POLICY_WAN_IFACE="$(xkeen_default_wan_iface 2>/dev/null)"
+  fi
+  if type xkeen_policy_has_wan >/dev/null 2>&1       && [ -n "$POLICY_NAME" ] && [ -n "$POLICY_WAN_IFACE" ]       && xkeen_policy_has_wan "$POLICY_NAME" "$POLICY_WAN_IFACE"; then
+    POLICY_WAN_READY=true
   fi
 
   MEM_AVAIL_KB="$(grep '^MemAvailable:' /proc/meminfo 2>/dev/null | /opt/bin/awk '{print $2}')"
@@ -859,6 +914,7 @@ emit_stack_info() {
     --arg vpn_sni "$VPN_SNI" \
     --arg vpn_endpoint_ip "$VPN_IP" \
     --arg vpn_exit_ip "$VPN_EXIT_IP" \
+    --arg direct_exit_ip "$DIRECT_EXIT_IP" \
     --arg wan_iface "$WAN_IFACE" \
     --arg wan_ip "$WAN_IP" \
     --arg lan_net "$LAN_NET" \
@@ -866,6 +922,8 @@ emit_stack_info() {
     --arg policy_name "$POLICY_NAME" \
     --arg policy_desc "$POLICY_DESC" \
     --arg xkeen_mark "$XKEEN_MARK_VAL" \
+    --arg policy_wan_iface "$POLICY_WAN_IFACE" \
+    --argjson policy_wan_ready "$POLICY_WAN_READY" \
     --argjson mem_avail_kb "$MEM_AVAIL_KB" \
     --argjson mem_total_kb "$MEM_TOTAL_KB" \
     --argjson ct_count "$CT_COUNT" \
@@ -880,8 +938,8 @@ emit_stack_info() {
       ok: true,
       versions: { antigoblin: $ag_ver, xray: $xray_ver, singbox: $sb_ver, kernel: $kernel, hostname: $hostname, uptimeSec: $uptime_sec },
       vpn:      { host: $vpn_host, port: $vpn_port, sni: $vpn_sni, endpointIp: $vpn_endpoint_ip, exitIp: $vpn_exit_ip },
-      network:  { wanIface: $wan_iface, wanIp: $wan_ip, gateway: $gw, lanNet: $lan_net },
-      xkeen:    { policyName: $policy_name, policyDescription: $policy_desc, mark: $xkeen_mark, tproxyUdp: 61221, redirectTcp: 61219, ssRelay: "127.0.0.1:62640" },
+      network:  { wanIface: $wan_iface, wanIp: $wan_ip, publicExitIp: $direct_exit_ip, gateway: $gw, lanNet: $lan_net },
+      xkeen:    { policyName: $policy_name, policyDescription: $policy_desc, mark: $xkeen_mark, wanIface: $policy_wan_iface, wanReady: $policy_wan_ready, tproxyUdp: 61221, redirectTcp: 61219, ssRelay: "127.0.0.1:62640" },
       runtime:  { selfhealIntervalSec: 15, logRotateInterval: "daily", backupRetention: 5, fdWarn: 400, fdCritical: 600 },
       resources:{ memAvailKb: $mem_avail_kb, memTotalKb: $mem_total_kb, conntrackCount: $ct_count, conntrackMax: $ct_max, xrayFd: $xray_fd, xrayFdLimit: $xray_fd_limit, diskTotalKb: $disk_total_kb, diskUsedKb: $disk_used_kb, diskAvailKb: $disk_avail_kb, diskMount: $disk_mount }
     }')"
@@ -1427,11 +1485,72 @@ case "$REQUEST_METHOD" in
 
       if [ "$CAPTURE_READY" != "true" ]; then
         json_err "VPN configs are valid and services restarted, but the xkeen TCP capture hook could not be installed; check Keenetic xkeen policy/iptables"
-      elif [ "$UDP_CAPTURE_REQUIRED" = "true" ] && [ "$UDP_CAPTURE_READY" != "true" ]; then
-        json_err "TCP capture is ready, but catch-all VPN requires UDP/QUIC TPROXY and it could not be installed; check xt_TPROXY/ip rule support"
-      else
-        json_ok "{\"ok\":true,\"restarted\":true,\"tcpCaptureReady\":true,\"udpCaptureRequired\":$UDP_CAPTURE_REQUIRED,\"udpCaptureReady\":$UDP_CAPTURE_READY,\"backgroundRepair\":true}"
+        exit 0
       fi
+      if [ "$UDP_CAPTURE_REQUIRED" = "true" ] && [ "$UDP_CAPTURE_READY" != "true" ]; then
+        json_err "TCP capture is ready, but catch-all VPN requires UDP/QUIC TPROXY and it could not be installed; check xt_TPROXY/ip rule support"
+        exit 0
+      fi
+
+      # The old UI called an apply successful once processes had listeners and
+      # PREROUTING existed. That is necessary, but not sufficient: a bad UUID,
+      # dead Hysteria endpoint, wrong Reality SNI, etc. still gives a green
+      # "Applied" while every proxied request fails. Probe one real HTTPS
+      # request through the stable local SOCKS inbound and, in parallel, one
+      # direct request from the router. This is an observation/warning rather
+      # than a rollback trigger because a provider can temporarily block the
+      # public-IP endpoints even while the tunnel itself is usable.
+      EGRESS_PROXY_IP=""
+      EGRESS_DIRECT_IP=""
+      EGRESS_STATUS="unavailable"
+      EGRESS_VERIFIED="null"
+      EGRESS_WARNING=""
+      if [ -x /opt/bin/curl ]; then
+        EG_PROXY_FILE="/tmp/xkeen-egress-proxy-$$.txt"
+        EG_DIRECT_FILE="/tmp/xkeen-egress-direct-$$.txt"
+        ( probe_proxy_exit_ip > "$EG_PROXY_FILE" 2>/dev/null ) & EG_PROXY_PID=$!
+        ( probe_direct_exit_ip > "$EG_DIRECT_FILE" 2>/dev/null ) & EG_DIRECT_PID=$!
+        wait "$EG_PROXY_PID" 2>/dev/null || true
+        wait "$EG_DIRECT_PID" 2>/dev/null || true
+        EGRESS_PROXY_IP="$(tr -d '\r\n ' < "$EG_PROXY_FILE" 2>/dev/null | head -c 80)"
+        EGRESS_DIRECT_IP="$(tr -d '\r\n ' < "$EG_DIRECT_FILE" 2>/dev/null | head -c 80)"
+        rm -f "$EG_PROXY_FILE" "$EG_DIRECT_FILE" 2>/dev/null || true
+
+        if [ -z "$EGRESS_PROXY_IP" ]; then
+          EGRESS_STATUS="proxy-unreachable"
+          EGRESS_VERIFIED=false
+          EGRESS_WARNING="VPN was applied, but a real HTTPS request through 127.0.0.1:61080 failed; check the active server/credentials and xray/sing-box logs"
+        elif [ -n "$EGRESS_DIRECT_IP" ] && [ "$EGRESS_PROXY_IP" = "$EGRESS_DIRECT_IP" ]; then
+          EGRESS_STATUS="same-as-direct"
+          EGRESS_VERIFIED=false
+          EGRESS_WARNING="VPN SOCKS path answered, but its public IP equals the router direct public IP; traffic may still be leaving through WAN"
+        else
+          EGRESS_STATUS="ok"
+          EGRESS_VERIFIED=true
+        fi
+      fi
+
+      POLICY_NAME_RESULT="$(xkeen_policy_name 2>/dev/null)"
+      POLICY_WAN_IFACE_RESULT="$(xkeen_default_wan_iface 2>/dev/null)"
+      POLICY_WAN_READY=false
+      if [ -n "$POLICY_NAME_RESULT" ] && [ -n "$POLICY_WAN_IFACE_RESULT" ] \
+         && xkeen_policy_has_wan "$POLICY_NAME_RESULT" "$POLICY_WAN_IFACE_RESULT"; then
+        POLICY_WAN_READY=true
+      fi
+
+      RESULT_JSON="$(/opt/bin/jq -cn \
+        --argjson udp_required "$UDP_CAPTURE_REQUIRED" \
+        --argjson udp_ready "$UDP_CAPTURE_READY" \
+        --argjson egress_verified "$EGRESS_VERIFIED" \
+        --arg egress_status "$EGRESS_STATUS" \
+        --arg proxy_ip "$EGRESS_PROXY_IP" \
+        --arg direct_ip "$EGRESS_DIRECT_IP" \
+        --arg warning "$EGRESS_WARNING" \
+        --arg policy_name "$POLICY_NAME_RESULT" \
+        --arg policy_wan "$POLICY_WAN_IFACE_RESULT" \
+        --argjson policy_wan_ready "$POLICY_WAN_READY" \
+        '{ok:true,restarted:true,tcpCaptureReady:true,udpCaptureRequired:$udp_required,udpCaptureReady:$udp_ready,backgroundRepair:true,egressVerified:$egress_verified,egressStatus:$egress_status,proxyExitIp:$proxy_ip,directExitIp:$direct_ip,warning:$warning,policy:{name:$policy_name,wanIface:$policy_wan,wanReady:$policy_wan_ready}}')"
+      json_ok "$RESULT_JSON"
       exit 0
     fi
 

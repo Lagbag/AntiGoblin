@@ -298,6 +298,26 @@ fetch_sources() {
 }
 
 ensure_xkeen_policy() {
+  # Reuse the same policy discovery/repair code as runtime/self-heal. This is
+  # important on upgrades: older/manual installs can have an `xkeen` policy
+  # that still contains client assignments and a mark, but has an empty
+  # "Connection" column in Keenetic because no `permit global <WAN>` remains.
+  # Treating "description xkeen exists" as sufficient leaves such installs
+  # half-broken forever.
+  RUNTIME_POLICY_LIB="$SRC_DIR/ui/xkeen-manager/backend/xkeen-runtime.sh"
+  if [ -r "$RUNTIME_POLICY_LIB" ]; then
+    # shellcheck disable=SC1090
+    . "$RUNTIME_POLICY_LIB"
+    if xkeen_ensure_policy; then
+      READY_POLICY="$(xkeen_policy_name 2>/dev/null)"
+      READY_WAN="$(xkeen_default_wan_iface 2>/dev/null)"
+      log "Keenetic policy 'xkeen' ready${READY_POLICY:+ ($READY_POLICY)}${READY_WAN:+ over $READY_WAN}"
+      return 0
+    fi
+    die "Failed to create/repair Keenetic policy 'xkeen'. Check active WAN interface and NDMC policy configuration."
+  fi
+
+  # Compatibility fallback for incomplete source trees.
   # Accept any of the NDMC description formats seen in the wild:
   #   `description = xkeen:Home`  (Format A one-liner)
   #   `description: xkeen`        (Format B multiline, no space before `:`)
@@ -688,6 +708,7 @@ print_summary() {
   printf '\n'
   printf 'Then in the Keenetic web UI assign devices to policy "xkeen"\n'
   printf 'in "Приоритеты подключений".\n'
+  printf 'Policy xkeen should also show an active WAN in its Connection column.\n'
   printf '====================================================\n'
 }
 
