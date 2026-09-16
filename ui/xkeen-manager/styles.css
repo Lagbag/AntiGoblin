@@ -2288,3 +2288,42 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px rgba(87,215,17
 }
 .tunnel-chip.good { border: 1px solid rgba(87,215,170,.3); background: rgba(87,215,170,.08); color: #bff2e0; }
 .tunnel-chip.bad { border: 1px solid rgba(255,114,124,.34); background: rgba(255,114,124,.07); color: #ffc7cc; }
+
+
+/* runtime6: explicit pending/stale state + auto-select quarantine */
+.dirty-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid rgba(240,201,116,.24);
+  border-radius: 11px;
+  background: rgba(240,201,116,.055);
+  color: #e9d49a;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.dirty-chip[hidden] { display: none !important; }
+.dirty-dot { width: 7px; height: 7px; border-radius: 50%; background: #f0c974; box-shadow: 0 0 0 4px rgba(240,201,116,.08); }
+.header-apply.has-pending { box-shadow: 0 0 0 3px rgba(87,215,170,.09), 0 10px 26px rgba(0,0,0,.18); }
+.runtime-mismatch.runtime-version-warning { border-color: rgba(240,201,116,.3); background: rgba(240,201,116,.055); color: #ead7a4; }
+.latency-chip.cooldown { border-color: rgba(240,201,116,.28); background: rgba(240,201,116,.07); color: #e8cf8e; }
+.failure-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255,114,124,.28);
+  border-radius: 999px;
+  background: rgba(255,114,124,.06);
+  color: #ffc7cc;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+@media (max-width: 900px) {
+  .dirty-chip { display: none; }
+}

@@ -323,6 +323,10 @@ const LOCALES = {
     logsEmpty: "(лог пуст)",
     logsCopyBtn: "Скопировать",
     logsCopiedDone: "Скопировано",
+    copyDiagnosticBtn: "Скопировать отчёт",
+    diagnosticReportCopied: "Отчёт скопирован",
+    dirtyPending: "Есть неприменённые изменения",
+    applyPending: "Применить изменения",
     dedupDomainsRemoved: "Убрано лишних доменов: {n} (покрыты родительским)",
     dedupCidrsRemoved: "Убрано лишних IP/CIDR: {n} (покрыты более широкой сетью)",
     stackInfoFetchFailed: "Не удалось загрузить параметры стека",
@@ -593,6 +597,10 @@ const LOCALES = {
     logsEmpty: "(log file is empty)",
     logsCopyBtn: "Copy",
     logsCopiedDone: "Copied",
+    copyDiagnosticBtn: "Copy report",
+    diagnosticReportCopied: "Report copied",
+    dirtyPending: "There are unapplied changes",
+    applyPending: "Apply changes",
     dedupDomainsRemoved: "Removed redundant domains: {n} (covered by a parent domain)",
     dedupCidrsRemoved: "Removed redundant IP/CIDR: {n} (covered by a broader network)",
     stackInfoFetchFailed: "Failed to load stack info",
@@ -672,6 +680,7 @@ let autoSelectRuntime = { phase: "idle", message: "", results: [], bestId: "", b
 let autoSelectTimer = null;
 let lastHealthPayload = null;
 let lastEgressCheck = null;
+let runtimeDirty = false;
 const VIEW_KEY = "antigoblin-view-v1";
 let currentView = localStorage.getItem(VIEW_KEY) || "overview";
 
@@ -798,9 +807,11 @@ const els = {
   importStateInput: document.getElementById("importStateInput"),
   saveStateBtn: document.getElementById("saveStateBtn"),
   saveApplyBtn: document.getElementById("saveApplyBtn"),
+  dirtyChip: document.getElementById("dirtyChip"),
   healthKicker: document.getElementById("healthKicker"),
   healthTitle: document.getElementById("healthTitle"),
   refreshHealthBtn: document.getElementById("refreshHealthBtn"),
+  copyDiagnosticBtn: document.getElementById("copyDiagnosticBtn"),
   healthBadges: document.getElementById("healthBadges"),
   exitIpRow: document.getElementById("exitIpRow"),
   healthChecks: document.getElementById("healthChecks"),
@@ -846,6 +857,33 @@ const els = {
   overviewRefreshBtn: document.getElementById("overviewRefreshBtn"),
   overviewGoServersBtn: document.getElementById("overviewGoServersBtn")
 };
+
+function setRuntimeDirty(value) {
+  runtimeDirty = !!value;
+  if (els.dirtyChip) {
+    els.dirtyChip.hidden = !runtimeDirty;
+    const text = els.dirtyChip.querySelector("span:last-child");
+    if (text) text.textContent = T.dirtyPending || (currentLang === "ru" ? "Есть неприменённые изменения" : "There are unapplied changes");
+  }
+  if (els.saveApplyBtn) {
+    els.saveApplyBtn.classList.toggle("has-pending", runtimeDirty);
+    if (!els.saveApplyBtn.disabled) {
+      els.saveApplyBtn.textContent = runtimeDirty ? (T.applyPending || T.saveApplyBtn) : T.saveApplyBtn;
+    }
+  }
+  if (els.quickApplyBtn) {
+    els.quickApplyBtn.classList.toggle("has-pending", runtimeDirty);
+    if (!els.quickApplyBtn.disabled) {
+      els.quickApplyBtn.textContent = runtimeDirty ? (T.applyPending || T.saveApplyBtn) : T.saveApplyBtn;
+    }
+  }
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (!runtimeDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 window.addEventListener("error", (event) => {
   pushDebug(`window.error: ${event.message}`);
@@ -955,8 +993,9 @@ function normalizeHostForCompare(value) {
   return String(value || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
 }
 
-function proxyMatchesApplied(proxy, applied) {
+function proxyMatchesApplied(proxy, applied, appliedMeta = null) {
   if (!proxy || !applied) return false;
+  if (appliedMeta?.activeProxyId) return proxy.id === appliedMeta.activeProxyId;
   const cfg = proxy.config || {};
   const pHost = normalizeHostForCompare(cfg.address);
   const aHost = normalizeHostForCompare(applied.host);
@@ -1002,14 +1041,17 @@ function renderDashboard(payload = lastHealthPayload) {
   }
 
   const applied = payload?.runtime?.applied || null;
-  const appliedName = proxies.find((p) => proxyMatchesApplied(p, applied))?.name || payload?.runtime?.stateActive?.name || "";
+  const appliedMeta = payload?.runtime?.appliedMeta || null;
+  const deployedVersion = String(payload?.runtime?.version || "");
+  const appliedName = proxies.find((p) => proxyMatchesApplied(p, applied, appliedMeta))?.name || appliedMeta?.name || payload?.runtime?.stateActive?.name || "";
+  const runtimeVersionStale = !!applied?.host && !!deployedVersion && (!appliedMeta?.version || appliedMeta.version !== deployedVersion);
   const healthStatus = payload?.healthStatus || "unknown";
   const socksOk = !!payload?.services?.xray?.listenSocks;
   const captureOk = payload?.checks?.tcpCaptureHook === "ok";
   const capturePackets = Number(payload?.checks?.tcpCapturePackets || 0);
   const policyOk = payload?.checks?.policyWanReady === "ok";
   const egressOk = lastEgressCheck ? !!lastEgressCheck.tunnelOk : null;
-  const runtimeOk = !!payload && healthSeverity(healthStatus) === "ok" && socksOk && captureOk && policyOk && egressOk !== false;
+  const runtimeOk = !!payload && healthSeverity(healthStatus) === "ok" && socksOk && captureOk && policyOk && egressOk !== false && !runtimeVersionStale;
 
   if (els.runtimeActiveName) els.runtimeActiveName.textContent = appliedName || (applied?.host ? applied.host : (currentLang === "ru" ? "Нет применённого сервера" : "No applied server"));
   if (els.runtimeProtocolBadge) els.runtimeProtocolBadge.textContent = applied?.protocol ? `${String(applied.protocol).toUpperCase()} · ${applied.engine || "?"}` : "—";
@@ -1034,17 +1076,28 @@ function renderDashboard(payload = lastHealthPayload) {
     }
   }
 
-  const mismatch = !!selected && !!applied && !proxyMatchesApplied(selected, applied);
+  const mismatch = !!selected && !!applied && !proxyMatchesApplied(selected, applied, appliedMeta);
   if (els.runtimeMismatch) {
-    els.runtimeMismatch.hidden = !mismatch;
-    if (mismatch) els.runtimeMismatch.textContent = currentLang === "ru"
-      ? `В интерфейсе выбран «${selected.name}», но реально применён другой endpoint. Нажми «Сохранить и применить».`
-      : `“${selected.name}” is selected in UI, but a different endpoint is actually applied. Click Save and apply.`;
+    const notices = [];
+    if (mismatch) notices.push(currentLang === "ru"
+      ? `В интерфейсе выбран «${selected.name}», но реально применён другой сервер. Нажми «Применить изменения».`
+      : `“${selected.name}” is selected in UI, but a different server is actually applied. Click Apply changes.`);
+    if (runtimeVersionStale) {
+      if (!appliedMeta?.version) notices.push(currentLang === "ru"
+        ? `AntiGoblin обновлён до ${deployedVersion}, а текущий VPN-runtime был применён старой версией без метки. После обновления нажми «Применить изменения» один раз.`
+        : `AntiGoblin is ${deployedVersion}, but the current VPN runtime was applied by an older build without version metadata. Click Apply changes once after the upgrade.`);
+      else notices.push(currentLang === "ru"
+        ? `UI/backend уже ${deployedVersion}, но текущий VPN-runtime применён версией ${appliedMeta.version}. Примени профиль один раз, чтобы синхронизировать runtime.`
+        : `UI/backend is ${deployedVersion}, but the active VPN runtime was applied by ${appliedMeta.version}. Apply the profile once to synchronize runtime.`);
+    }
+    els.runtimeMismatch.hidden = notices.length === 0;
+    els.runtimeMismatch.classList.toggle("runtime-version-warning", runtimeVersionStale);
+    els.runtimeMismatch.textContent = notices.join(" ");
   }
   if (els.selectedProxyNotice) {
-    els.selectedProxyNotice.textContent = mismatch
-      ? (currentLang === "ru" ? "Выбор ещё не применён на роутере." : "Selection is not applied on the router yet.")
-      : (currentLang === "ru" ? "Выбор совпадает с текущим runtime." : "Selection matches the current runtime.");
+    if (mismatch) els.selectedProxyNotice.textContent = currentLang === "ru" ? "Выбор ещё не применён на роутере." : "Selection is not applied on the router yet.";
+    else if (runtimeVersionStale) els.selectedProxyNotice.textContent = currentLang === "ru" ? "После обновления runtime нужно применить один раз." : "Runtime needs one apply after the upgrade.";
+    else els.selectedProxyNotice.textContent = currentLang === "ru" ? "Выбор совпадает с текущим runtime." : "Selection matches the current runtime.";
   }
 
   if (els.headerRuntimeChip) {
@@ -1116,7 +1169,8 @@ async function bootstrap() {
     await hydrateProxyConfigFromRemote();
     pushDebug(`loaded live state: profiles=${state.profiles.length}, activeGroups=${getActiveProfile()?.groups?.length ?? 0}`);
     hideAuthOverlay();
-    persistAndRender();
+    persistAndRender(false);
+    setRuntimeDirty(false);
     renderHealth().catch(() => {});
     renderStackInfo().catch(() => {});
     startExitIpCheck();
@@ -1135,11 +1189,13 @@ async function bootstrap() {
       pushDebug(`loaded from localStorage after live failure: profiles=${saved.profiles?.length ?? 0}, activeGroups=${savedProfile?.groups?.length ?? 0}`);
       state = saved;
       render();
+      setRuntimeDirty(true);
       return;
     }
 
     state = cloneFallback();
-    persistAndRender();
+    persistAndRender(false);
+    setRuntimeDirty(false);
   }
 }
 
@@ -1245,7 +1301,7 @@ function bindTopLevel() {
       if (!profile) return;
       profile.autoSelect = normalizeAutoSelectConfig(profile.autoSelect);
       profile.autoSelect.enabled = els.autoSelectEnabled.checked;
-      persistState();
+      persistState(false);
       saveRemoteState().catch((error) => pushDebug(`autoselect state sync failed: ${error.message}`));
     });
   }
@@ -1254,7 +1310,7 @@ function bindTopLevel() {
       const profile = getActiveProfile();
       if (!profile) return;
       profile.autoSelect = normalizeAutoSelectConfig({ ...profile.autoSelect, intervalSec: Number(els.autoSelectInterval.value) });
-      persistState();
+      persistState(false);
       saveRemoteState().catch((error) => pushDebug(`autoselect interval sync failed: ${error.message}`));
     });
   }
@@ -1264,7 +1320,7 @@ function bindTopLevel() {
       if (!profile) return;
       profile.autoSelect = normalizeAutoSelectConfig({ ...profile.autoSelect, minImprovementMs: Number(els.autoSelectThreshold.value) });
       els.autoSelectThreshold.value = String(profile.autoSelect.minImprovementMs);
-      persistState();
+      persistState(false);
       saveRemoteState().catch((error) => pushDebug(`autoselect threshold sync failed: ${error.message}`));
     });
   }
@@ -1596,6 +1652,28 @@ function bindTopLevel() {
       }
     });
   }
+  if (els.copyDiagnosticBtn) {
+    els.copyDiagnosticBtn.addEventListener("click", async () => {
+      els.copyDiagnosticBtn.disabled = true;
+      const previous = els.copyDiagnosticBtn.textContent;
+      els.copyDiagnosticBtn.textContent = currentLang === "ru" ? "Собираю…" : "Collecting…";
+      try {
+        const report = await buildDiagnosticReport();
+        await copyTextReliable(report);
+        els.copyDiagnosticBtn.classList.add("copied");
+        els.copyDiagnosticBtn.textContent = T.diagnosticReportCopied || (currentLang === "ru" ? "Отчёт скопирован" : "Report copied");
+        setTimeout(() => {
+          els.copyDiagnosticBtn.classList.remove("copied");
+          els.copyDiagnosticBtn.textContent = T.copyDiagnosticBtn || previous;
+        }, 1800);
+      } catch (error) {
+        showToast(`${currentLang === "ru" ? "Не удалось собрать отчёт" : "Could not build report"}: ${error.message}`, { kind: "error", ttl: 6000 });
+        els.copyDiagnosticBtn.textContent = T.copyDiagnosticBtn || previous;
+      } finally {
+        els.copyDiagnosticBtn.disabled = false;
+      }
+    });
+  }
   if (els.logsCopyBtn) {
     els.logsCopyBtn.addEventListener("click", async () => {
       const text = els.logsPreview ? (els.logsPreview.textContent || "") : "";
@@ -1722,7 +1800,8 @@ function bindTopLevel() {
       }
 
       step = "done";
-      persistState();
+      persistState(false);
+      setRuntimeDirty(false);
       lastKnownVpnIp = null;
       EXIT_IP_LOG.length = 0;
       const policyWarning = runtimeResult?.policy?.wanReady === false
@@ -1865,7 +1944,7 @@ async function fetchAutoSelectStatus() {
   if (profile && autoSelectRuntime.currentId && (profile.proxies || []).some((p) => p.id === autoSelectRuntime.currentId)) {
     if (profile.activeProxyId !== autoSelectRuntime.currentId) {
       profile.activeProxyId = autoSelectRuntime.currentId;
-      persistState();
+      persistState(false);
     }
   }
   renderAutoSelectStatus();
@@ -2446,6 +2525,72 @@ async function renderStackInfo() {
   });
 }
 
+async function copyTextReliable(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("clipboard unavailable");
+}
+
+function redactDiagnosticText(text) {
+  return String(text || "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, "<uuid-redacted>")
+    .replace(/([?&](?:token|auth|password|passwd|key|secret|uuid)=)[^&\s]+/gi, "$1<redacted>")
+    .replace(/(hysteria2|hy2|vless|vmess|trojan|tuic|ss):\/\/[^\s]+/gi, "$1://<redacted>");
+}
+
+async function buildDiagnosticReport() {
+  const settle = (promise) => Promise.resolve(promise).then((value) => ({ ok: true, value }), (error) => ({ ok: false, error: error?.message || String(error) }));
+  const [healthR, stackR, egressR, autoR, singR, xrayR, autoLogR] = await Promise.all([
+    settle(fetchHealth()),
+    settle(fetchStackInfo()),
+    settle(checkRuntimeEgress()),
+    settle(fetchAutoSelectStatus()),
+    settle(fetchLogs("singbox", 60)),
+    settle(fetchLogs("xray", 40)),
+    settle(fetchLogs("autoselect", 60))
+  ]);
+  const health = healthR.ok ? healthR.value : null;
+  const stack = stackR.ok ? stackR.value : null;
+  const egress = egressR.ok ? egressR.value : null;
+  const auto = autoR.ok ? autoR.value : autoSelectRuntime;
+  const profile = getActiveProfile();
+  const selected = (profile?.proxies || []).find((p) => p.id === profile?.activeProxyId) || null;
+  const applied = health?.runtime?.applied || lastHealthPayload?.runtime?.applied || null;
+  const meta = health?.runtime?.appliedMeta || lastHealthPayload?.runtime?.appliedMeta || null;
+  const safe = (value) => value == null || value === "" ? "-" : String(value);
+  const lines = [
+    "AntiGoblin diagnostic report",
+    `generated=${new Date().toISOString()}`,
+    `ui_version=${safe(health?.runtime?.version || stack?.versions?.antiGoblin || els.heroVersion?.textContent)}`,
+    `selected=${safe(selected?.name)} | id=${safe(selected?.id)} | ${safe(selected?.config?.protocol)} | ${safe(selected?.config?.address)}:${safe(selected?.config?.port)}`,
+    `applied=${safe(meta?.name || applied?.host)} | id=${safe(meta?.activeProxyId)} | ${safe(applied?.protocol || meta?.protocol)} | ${safe(applied?.host)}:${safe(applied?.port)} | source=${safe(meta?.source)} | applied_version=${safe(meta?.version)}`,
+    `health=${safe(health?.healthStatus)} | socks61080=${safe(health?.services?.xray?.listenSocks)} | tcp_capture=${safe(health?.checks?.tcpCaptureHook)} | packets=${safe(health?.checks?.tcpCapturePackets)} | policy_wan=${safe(health?.checks?.policyWanReady)}`,
+    `egress_ok=${safe(egress?.tunnelOk)} | egress_status=${safe(egress?.status)} | http=${safe(egress?.httpCode || egress?.egressHttpCode)} | proxy_ip=${egress?.proxyExitIp ? "<present>" : "-"} | direct_ip=${egress?.directExitIp ? "<present>" : "-"}`,
+    `autoselect_phase=${safe(auto?.phase)} | current=${safe(auto?.currentId)} | current_ms=${safe(auto?.currentLatencyMs)} | best=${safe(auto?.bestId)} | best_ms=${safe(auto?.bestLatencyMs)}`,
+    "",
+    "--- sing-box (last 60) ---",
+    singR.ok ? singR.value : `[error: ${singR.error}]`,
+    "",
+    "--- xray (last 40) ---",
+    xrayR.ok ? xrayR.value : `[error: ${xrayR.error}]`,
+    "",
+    "--- autoselect (last 60) ---",
+    autoLogR.ok ? autoLogR.value : `[error: ${autoLogR.error}]`
+  ];
+  return redactDiagnosticText(lines.join("\n"));
+}
+
 async function fetchHealth() {
   const response = await fetchWithTimeout(HEALTH_URL, { cache: "no-store" });
   if (!response.ok) {
@@ -2829,13 +2974,14 @@ function updateGroup(id, patch) {
   renderQuickStart(profile);
 }
 
-function persistAndRender() {
-  persistState();
+function persistAndRender(markRuntimeDirty = true) {
+  persistState(markRuntimeDirty);
   render();
 }
 
 let persistQuotaWarned = false;
-function persistState() {
+function persistState(markRuntimeDirty = true) {
+  if (markRuntimeDirty) setRuntimeDirty(true);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     persistQuotaWarned = false;
@@ -3377,6 +3523,44 @@ function renderAutoSelectStatus() {
   }
 }
 
+function formatCooldownRemaining(untilSec) {
+  const remaining = Math.max(0, Number(untilSec || 0) * 1000 - Date.now());
+  if (!remaining) return "";
+  const minutes = Math.max(1, Math.ceil(remaining / 60000));
+  if (minutes >= 60) return currentLang === "ru" ? `${Math.ceil(minutes / 60)} ч` : `${Math.ceil(minutes / 60)} h`;
+  return currentLang === "ru" ? `${minutes} мин` : `${minutes} min`;
+}
+
+function failureReasonLabel(reason) {
+  const map = currentLang === "ru"
+    ? { "hy2-auth-404": "AUTH 404", "quic-timeout": "QUIC timeout", "tls-error": "TLS", "config-invalid": "CONFIG", "runtime-restart": "RESTART", "egress-failed": "VPN FAIL" }
+    : { "hy2-auth-404": "AUTH 404", "quic-timeout": "QUIC timeout", "tls-error": "TLS", "config-invalid": "CONFIG", "runtime-restart": "RESTART", "egress-failed": "VPN FAIL" };
+  return map[reason] || String(reason || "VPN FAIL").toUpperCase();
+}
+
+function failureReasonTitle(reason) {
+  if (currentLang === "ru") {
+    const map = {
+      "hy2-auth-404": "Hysteria2: сервер отклонил авторизацию; сервер временно исключён из авто-выбора",
+      "quic-timeout": "QUIC не установился; сервер временно исключён из авто-выбора",
+      "tls-error": "Ошибка TLS/сертификата; сервер временно исключён из авто-выбора",
+      "config-invalid": "Сгенерированный конфиг не прошёл проверку",
+      "runtime-restart": "Runtime не перезапустился для этого сервера",
+      "egress-failed": "Реальный HTTPS через VPN не прошёл"
+    };
+    return map[reason] || "Сервер временно исключён из авто-выбора после ошибки туннеля";
+  }
+  const map = {
+    "hy2-auth-404": "Hysteria2 authentication was rejected; temporarily excluded from auto-selection",
+    "quic-timeout": "QUIC failed; temporarily excluded from auto-selection",
+    "tls-error": "TLS/certificate error; temporarily excluded from auto-selection",
+    "config-invalid": "Generated config validation failed",
+    "runtime-restart": "Runtime failed to restart for this server",
+    "egress-failed": "Real HTTPS through the VPN failed"
+  };
+  return map[reason] || "Temporarily excluded from auto-selection after a tunnel failure";
+}
+
 function renderActiveProxyList(profile) {
   if (!els.activeProxyList) return;
   els.activeProxyList.innerHTML = "";
@@ -3406,16 +3590,21 @@ function renderActiveProxyList(profile) {
   }
   const activeId = profile.activeProxyId;
   const applied = lastHealthPayload?.runtime?.applied || null;
+  const appliedMeta = lastHealthPayload?.runtime?.appliedMeta || null;
   for (const p of visibleProxies) {
     const sub = (profile.subscriptions || []).find((s) => s.id === p.source);
     const srcLabel = sub ? sub.name : (T.manualKeySrc || "manual");
     const latency = (autoSelectRuntime.results || []).find((x) => x.id === p.id);
+    const cooldownText = latency?.cooldown ? formatCooldownRemaining(latency.cooldownUntil) : "";
     const latencyHtml = latency
       ? (latency.ok && Number.isFinite(latency.latencyMs)
-          ? `<span class="latency-chip ${latencyClass(latency.latencyMs)} ${p.id === autoSelectRuntime.bestId ? "best" : ""}">${Math.round(latency.latencyMs)} ms</span>`
-          : `<span class="latency-chip bad">${escapeHtml(T.autoSelectOffline || "offline")}</span>`)
+          ? `<span class="latency-chip ${latencyClass(latency.latencyMs)} ${p.id === autoSelectRuntime.bestId ? "best" : ""} ${latency.cooldown ? "cooldown" : ""}">${Math.round(latency.latencyMs)} ms${cooldownText ? ` · ⏳ ${escapeHtml(cooldownText)}` : ""}</span>`
+          : `<span class="latency-chip bad ${latency.cooldown ? "cooldown" : ""}">${escapeHtml(T.autoSelectOffline || "offline")}${cooldownText ? ` · ⏳ ${escapeHtml(cooldownText)}` : ""}</span>`)
       : `<span class="latency-chip">…</span>`;
-    const isApplied = proxyMatchesApplied(p, applied);
+    const failureChip = latency?.cooldown && latency.failureReason
+      ? `<span class="failure-chip" title="${escapeHtml(failureReasonTitle(latency.failureReason))}">${escapeHtml(failureReasonLabel(latency.failureReason))}</span>`
+      : "";
+    const isApplied = proxyMatchesApplied(p, applied, appliedMeta);
     const isSelected = p.id === activeId;
     const pendingApply = isSelected && !isApplied;
     const tunnelChip = isApplied && lastEgressCheck
@@ -3441,6 +3630,7 @@ function renderActiveProxyList(profile) {
         </div>
       </div>
       <div class="server-status-stack">
+        ${failureChip}
         ${tunnelChip}
         ${isApplied ? `<span class="applied-chip">${currentLang === "ru" ? "применён" : "applied"}</span>` : ""}
         ${pendingApply ? `<button type="button" class="server-apply-btn" data-server-apply="1">${currentLang === "ru" ? "Применить" : "Apply"}</button>` : ""}
@@ -3464,6 +3654,7 @@ function escapeHtml(s) {
 // treats `profile.proxyConfig` as its edit buffer and `bindProxyField`
 // persists dirty state to localStorage on every keystroke.
 let manualKeyFormSnapshot = null;
+let manualKeyFormDirtySnapshot = false;
 
 function openManualKeyForm(proxyId = null) {
   editingProxyId = proxyId;
@@ -3475,6 +3666,7 @@ function openManualKeyForm(proxyId = null) {
   if (!profile) return;
 
   manualKeyFormSnapshot = profile.proxyConfig ? { ...profile.proxyConfig } : null;
+  manualKeyFormDirtySnapshot = runtimeDirty;
 
   if (proxyId) {
     const p = (profile.proxies || []).find((x) => x.id === proxyId);
@@ -3499,9 +3691,11 @@ function closeManualKeyForm() {
   const profile = getActiveProfile();
   if (profile && manualKeyFormSnapshot !== null) {
     profile.proxyConfig = manualKeyFormSnapshot;
-    persistState();
+    persistState(false);
+    setRuntimeDirty(manualKeyFormDirtySnapshot);
   }
   manualKeyFormSnapshot = null;
+  manualKeyFormDirtySnapshot = false;
 }
 
 function openSubscriptionForm() {
@@ -3570,6 +3764,7 @@ function saveManualKey() {
   // Save committed the buffer, so don't let closeManualKeyForm revert to
   // the pre-open snapshot.
   manualKeyFormSnapshot = null;
+  manualKeyFormDirtySnapshot = runtimeDirty;
   closeManualKeyForm();
   persistState();
   renderProxiesPanel(profile);
@@ -5898,6 +6093,7 @@ function applyTranslations() {
   if (els.healthKicker) els.healthKicker.textContent = T.healthKicker;
   if (els.healthTitle) els.healthTitle.textContent = T.healthTitle;
   if (els.refreshHealthBtn) els.refreshHealthBtn.textContent = T.healthRefreshBtn;
+  if (els.copyDiagnosticBtn && !els.copyDiagnosticBtn.classList.contains("copied")) els.copyDiagnosticBtn.textContent = T.copyDiagnosticBtn || (currentLang === "ru" ? "Скопировать отчёт" : "Copy report");
   if (els.restartXrayBtn) els.restartXrayBtn.textContent = T.restartXrayBtn;
   if (els.restartSingboxBtn) els.restartSingboxBtn.textContent = T.restartSingboxBtn;
   if (els.restartSelfhealBtn) els.restartSelfhealBtn.textContent = T.restartSelfhealBtn;
@@ -5907,4 +6103,5 @@ function applyTranslations() {
   if (els.logsCopyBtn && !els.logsCopyBtn.classList.contains("copied")) {
     els.logsCopyBtn.textContent = T.logsCopyBtn;
   }
+  setRuntimeDirty(runtimeDirty);
 }

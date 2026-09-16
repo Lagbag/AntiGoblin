@@ -24,6 +24,7 @@ XRAY_BIN="/opt/sbin/xray"
 SELFHEAL_PATH="/opt/share/xkeen-manager/api/xkeen-selfheal.sh"
 TMP_RESTART_SCRIPT="/tmp/xkeen-apply-restart.sh"
 RUNTIME_DIR="/opt/share/xkeen-manager/runtime"
+APPLIED_META_PATH="$RUNTIME_DIR/applied-meta.json"
 XKEEN_MARK=""
 
 XKEEN_RUNTIME_LOG="$LOG_PATH"
@@ -235,6 +236,10 @@ restart_singbox() {
   rm -f /opt/var/run/sing-box.pid 2>/dev/null || true
   [ -x /opt/sbin/sing-box ] || return 1
   [ -f /opt/etc/sing-box/xkeen.json ] || return 1
+  # Keep the per-runtime RAM log scoped to this exact process.  Otherwise a
+  # stale HY2 AUTH 404 from the previous server can poison diagnostics for a
+  # freshly applied VLESS/TUIC/etc. candidate.
+  : > /tmp/antigoblin-singbox-runtime.log 2>/dev/null || true
   /opt/sbin/start-stop-daemon -S -b -m -p /opt/var/run/sing-box.pid -x /opt/sbin/sing-box -- run -c /opt/etc/sing-box/xkeen.json >>/opt/var/log/sing-box-xkeen.log 2>&1 || return 1
 
   i=0
@@ -485,6 +490,44 @@ load_vpn_endpoint() {
   case "$VPN_PORT" in ''|*[!0-9]*) VPN_PORT=0 ;; esac
 }
 
+write_applied_meta() {
+  source_name="${1:-manual}"
+  mkdir -p "$RUNTIME_DIR" 2>/dev/null || return 1
+  version="$(head -n 1 /opt/share/xkeen-manager/VERSION 2>/dev/null | tr -d '\r\n')"
+  now="$(date +%s 2>/dev/null || echo 0)"
+  profile_id=""
+  proxy_id=""
+  proxy_name=""
+  proxy_protocol=""
+  if [ -f "$STATE_PATH" ] && [ -x /opt/bin/jq ]; then
+    profile_id="$(/opt/bin/jq -r '.activeProfileId // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    proxy_id="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) | .activeProxyId // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    proxy_name="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .name // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+    proxy_protocol="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) as $p | ($p.activeProxyId // "") as $aid | $p.proxies[]? | select(.id == $aid) | .config.protocol // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+  fi
+  tmp="${APPLIED_META_PATH}.new-$$"
+  /opt/bin/jq -n \
+    --arg version "$version" --arg source "$source_name" \
+    --arg profileId "$profile_id" --arg activeProxyId "$proxy_id" \
+    --arg name "$proxy_name" --arg protocol "$proxy_protocol" \
+    --argjson appliedAt "$now" \
+    '{version:$version,source:$source,profileId:$profileId,activeProxyId:$activeProxyId,name:$name,protocol:$protocol,appliedAt:$appliedAt}' > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$APPLIED_META_PATH" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  chmod 600 "$APPLIED_META_PATH" 2>/dev/null || true
+  return 0
+}
+
+clear_autoselect_failure_for_active() {
+  cache="/tmp/antigoblin-autoselect-failures.json"
+  [ -f "$cache" ] || return 0
+  [ -x /opt/bin/jq ] || return 0
+  active_id="$(/opt/bin/jq -r '(.activeProfileId // "") as $pid | .profiles[]? | select(.id == $pid) | .activeProxyId // ""' "$STATE_PATH" 2>/dev/null | head -1)"
+  [ -n "$active_id" ] || return 0
+  tmp="${cache}.clear-$$"
+  /opt/bin/jq --arg id "$active_id" 'if (.entries | type) == "object" then del(.entries[$id]) else . end' "$cache" > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$cache" 2>/dev/null || rm -f "$tmp"
+}
+
 emit_health() {
   XRAY_PID="$(get_xray_pid)"
   SB_PID="$(pidof sing-box 2>/dev/null | /opt/bin/awk '{ print $1 }')"
@@ -615,6 +658,25 @@ emit_health() {
   elif [ -f "$OUTBOUNDS_PATH" ]; then
     APPLIED_PROTOCOL="$(/opt/bin/jq -r '.outbounds[]? | select(.tag=="vless-reality") | .protocol // ""' "$OUTBOUNDS_PATH" 2>/dev/null | head -1)"
   fi
+  DEPLOYED_VERSION="$(head -n 1 /opt/share/xkeen-manager/VERSION 2>/dev/null | tr -d '\r\n')"
+  META_VERSION=""
+  META_SOURCE=""
+  META_PROFILE_ID=""
+  META_PROXY_ID=""
+  META_PROXY_NAME=""
+  META_PROXY_PROTOCOL=""
+  META_APPLIED_AT=0
+  if [ -f "$APPLIED_META_PATH" ] && [ -x /opt/bin/jq ]; then
+    META_VERSION="$(/opt/bin/jq -r '.version // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_SOURCE="$(/opt/bin/jq -r '.source // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_PROFILE_ID="$(/opt/bin/jq -r '.profileId // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_PROXY_ID="$(/opt/bin/jq -r '.activeProxyId // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_PROXY_NAME="$(/opt/bin/jq -r '.name // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_PROXY_PROTOCOL="$(/opt/bin/jq -r '.protocol // ""' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+    META_APPLIED_AT="$(/opt/bin/jq -r '.appliedAt // 0' "$APPLIED_META_PATH" 2>/dev/null | head -1)"
+  fi
+  case "$META_APPLIED_AT" in ''|*[!0-9]*) META_APPLIED_AT=0 ;; esac
+
   VPN_IP=""
   VPN_ESTABLISHED=0
   VPN_FIN_WAIT=0
@@ -719,6 +781,14 @@ emit_health() {
     --argjson state_active_port "${STATE_ACTIVE_PORT:-0}" \
     --arg applied_protocol "${APPLIED_PROTOCOL:-}" \
     --arg applied_engine "${APPLIED_ENGINE:-}" \
+    --arg deployed_version "${DEPLOYED_VERSION:-}" \
+    --arg meta_version "${META_VERSION:-}" \
+    --arg meta_source "${META_SOURCE:-}" \
+    --arg meta_profile_id "${META_PROFILE_ID:-}" \
+    --arg meta_proxy_id "${META_PROXY_ID:-}" \
+    --arg meta_proxy_name "${META_PROXY_NAME:-}" \
+    --arg meta_proxy_protocol "${META_PROXY_PROTOCOL:-}" \
+    --argjson meta_applied_at "${META_APPLIED_AT:-0}" \
     --arg health_status "$HEALTH_STATUS" \
     '{
       ok: true,
@@ -743,8 +813,10 @@ emit_health() {
       xrayFd: { count: $xray_fd, limit: $xray_fd_limit },
       conntrack: { count: $ct_count, max: $ct_max },
       runtime: {
+        version: $deployed_version,
         stateActive: { id: $state_active_id, name: $state_active_name, protocol: $state_active_protocol, address: $state_active_address, port: $state_active_port },
-        applied: { protocol: $applied_protocol, engine: $applied_engine, host: $vpn_host, port: $vpn_port }
+        applied: { protocol: $applied_protocol, engine: $applied_engine, host: $vpn_host, port: $vpn_port },
+        appliedMeta: { version: $meta_version, source: $meta_source, profileId: $meta_profile_id, activeProxyId: $meta_proxy_id, name: $meta_proxy_name, protocol: $meta_proxy_protocol, appliedAt: $meta_applied_at }
       },
       vpnTunnel: {
         host: $vpn_host,
@@ -812,6 +884,17 @@ emit_logs() {
     printf '(log file %s does not exist)\n' "$LOG_FILE"
   fi
   exit 0
+}
+
+probe_https_via() {
+  MODE="$1"
+  [ -x /opt/bin/curl ] || { printf '000'; return 0; }
+  if [ "$MODE" = "proxy" ]; then
+    code="$(/opt/bin/curl -4 -sS -o /dev/null --socks5-hostname 127.0.0.1:61080 --connect-timeout 3 --max-time 8 -w '%{http_code}' https://example.com 2>/dev/null || true)"
+  else
+    code="$(/opt/bin/curl -4 -sS -o /dev/null --connect-timeout 3 --max-time 8 -w '%{http_code}' https://example.com 2>/dev/null || true)"
+  fi
+  case "$code" in 2??|3??) printf '%s' "$code" ;; *) printf '000' ;; esac
 }
 
 probe_public_ip_via() {
@@ -1514,6 +1597,11 @@ case "$REQUEST_METHOD" in
         fi
       fi
 
+      # Record which app version / proxy actually produced the live runtime.
+      # This survives UI reloads and lets the dashboard distinguish "selected"
+      # from "really applied", including after an in-place AntiGoblin upgrade.
+      write_applied_meta manual >/dev/null 2>&1 || true
+
       # Keep self-heal alive after an apply. Auto-select is restarted only
       # after the browser writes the fresh autoselect catalog (see that branch
       # below), otherwise a just-started loop can race on stale server configs.
@@ -1550,24 +1638,44 @@ case "$REQUEST_METHOD" in
       # public-IP endpoints even while the tunnel itself is usable.
       EGRESS_PROXY_IP=""
       EGRESS_DIRECT_IP=""
+      EGRESS_HTTP_CODE="000"
       EGRESS_STATUS="unavailable"
       EGRESS_VERIFIED="null"
       EGRESS_WARNING=""
       if [ -x /opt/bin/curl ]; then
-        EG_PROXY_FILE="/tmp/xkeen-egress-proxy-$$.txt"
-        EG_DIRECT_FILE="/tmp/xkeen-egress-direct-$$.txt"
-        ( probe_proxy_exit_ip > "$EG_PROXY_FILE" 2>/dev/null ) & EG_PROXY_PID=$!
-        ( probe_direct_exit_ip > "$EG_DIRECT_FILE" 2>/dev/null ) & EG_DIRECT_PID=$!
-        wait "$EG_PROXY_PID" 2>/dev/null || true
-        wait "$EG_DIRECT_PID" 2>/dev/null || true
-        EGRESS_PROXY_IP="$(tr -d '\r\n ' < "$EG_PROXY_FILE" 2>/dev/null | head -c 80)"
-        EGRESS_DIRECT_IP="$(tr -d '\r\n ' < "$EG_DIRECT_FILE" 2>/dev/null | head -c 80)"
-        rm -f "$EG_PROXY_FILE" "$EG_DIRECT_FILE" 2>/dev/null || true
+        # First prove a neutral HTTPS request succeeds. Public-IP services are
+        # optional metadata only; a provider can block ipify/icanhazip while
+        # ordinary HTTPS through the tunnel works perfectly. runtime5 treated
+        # that case as a false VPN failure.
+        EGRESS_HTTP_CODE="$(probe_https_via proxy)"
+        case "$EGRESS_HTTP_CODE" in
+          2??|3??) EGRESS_HTTPS_OK=1 ;;
+          *) EGRESS_HTTPS_OK=0 ;;
+        esac
 
-        if [ -z "$EGRESS_PROXY_IP" ]; then
+        if [ "$EGRESS_HTTPS_OK" = "1" ]; then
+          EG_PROXY_FILE="/tmp/xkeen-egress-proxy-$$.txt"
+          EG_DIRECT_FILE="/tmp/xkeen-egress-direct-$$.txt"
+          ( probe_proxy_exit_ip > "$EG_PROXY_FILE" 2>/dev/null ) & EG_PROXY_PID=$!
+          ( probe_direct_exit_ip > "$EG_DIRECT_FILE" 2>/dev/null ) & EG_DIRECT_PID=$!
+          wait "$EG_PROXY_PID" 2>/dev/null || true
+          wait "$EG_DIRECT_PID" 2>/dev/null || true
+          EGRESS_PROXY_IP="$(tr -d '\r\n ' < "$EG_PROXY_FILE" 2>/dev/null | head -c 80)"
+          EGRESS_DIRECT_IP="$(tr -d '\r\n ' < "$EG_DIRECT_FILE" 2>/dev/null | head -c 80)"
+          rm -f "$EG_PROXY_FILE" "$EG_DIRECT_FILE" 2>/dev/null || true
+
+          if [ -n "$EGRESS_PROXY_IP" ] && [ -n "$EGRESS_DIRECT_IP" ] && [ "$EGRESS_PROXY_IP" = "$EGRESS_DIRECT_IP" ]; then
+            EGRESS_STATUS="same-as-direct"
+            EGRESS_VERIFIED=false
+            EGRESS_WARNING="VPN HTTPS works, but its public IP equals the router direct public IP; traffic may still be leaving through WAN"
+          else
+            EGRESS_STATUS="ok"
+            EGRESS_VERIFIED=true
+          fi
+        else
           EGRESS_STATUS="proxy-unreachable"
           EGRESS_VERIFIED=false
-          EGRESS_WARNING="VPN was applied, but a real HTTPS request through 127.0.0.1:61080 failed; check the active server/credentials and xray/sing-box logs"
+          EGRESS_WARNING="VPN was applied, but a neutral HTTPS request through 127.0.0.1:61080 failed; check the active server/credentials and xray/sing-box logs"
 
           # Turn the most common sing-box/HY2 failures into actionable UI
           # diagnostics. Do not expose credentials; only classify the runtime
@@ -1577,10 +1685,6 @@ case "$REQUEST_METHOD" in
           if [ -f "$SINGBOX_PATH" ]; then
             ACTIVE_SB_TYPE="$(/opt/bin/jq -r '(.outbounds[]? | select(.tag=="proxy") | .type) // (.endpoints[]? | select(.tag=="proxy") | .type) // ""' "$SINGBOX_PATH" 2>/dev/null | head -1)"
           fi
-          # Do not classify stale sing-box lines when the currently applied
-          # server is VLESS/VMess on Xray. Old HY2 AUTH 404 lines remain in the
-          # RAM log after a later Xray switch and previously made diagnostics
-          # lie about the active protocol.
           if [ -n "$ACTIVE_SB_TYPE" ] && [ -f "$SB_RT_LOG" ]; then
             if [ "$ACTIVE_SB_TYPE" = "hysteria2" ] && tail -n 100 "$SB_RT_LOG" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
               EGRESS_STATUS="hy2-auth-404"
@@ -1594,14 +1698,11 @@ case "$REQUEST_METHOD" in
               EGRESS_WARNING="VPN TLS/QUIC handshake failed. Check SNI, certificate/insecure, ECH and certificate pin settings."
             fi
           fi
-        elif [ -n "$EGRESS_DIRECT_IP" ] && [ "$EGRESS_PROXY_IP" = "$EGRESS_DIRECT_IP" ]; then
-          EGRESS_STATUS="same-as-direct"
-          EGRESS_VERIFIED=false
-          EGRESS_WARNING="VPN SOCKS path answered, but its public IP equals the router direct public IP; traffic may still be leaving through WAN"
-        else
-          EGRESS_STATUS="ok"
-          EGRESS_VERIFIED=true
         fi
+      fi
+
+      if [ "$EGRESS_VERIFIED" = "true" ]; then
+        clear_autoselect_failure_for_active >/dev/null 2>&1 || true
       fi
 
       POLICY_NAME_RESULT="$(xkeen_policy_name 2>/dev/null)"
@@ -1617,13 +1718,14 @@ case "$REQUEST_METHOD" in
         --argjson udp_ready "$UDP_CAPTURE_READY" \
         --argjson egress_verified "$EGRESS_VERIFIED" \
         --arg egress_status "$EGRESS_STATUS" \
+        --arg egress_http "$EGRESS_HTTP_CODE" \
         --arg proxy_ip "$EGRESS_PROXY_IP" \
         --arg direct_ip "$EGRESS_DIRECT_IP" \
         --arg warning "$EGRESS_WARNING" \
         --arg policy_name "$POLICY_NAME_RESULT" \
         --arg policy_wan "$POLICY_WAN_IFACE_RESULT" \
         --argjson policy_wan_ready "$POLICY_WAN_READY" \
-        '{ok:true,restarted:true,tcpCaptureReady:true,udpCaptureRequired:$udp_required,udpCaptureReady:$udp_ready,backgroundRepair:true,egressVerified:$egress_verified,egressStatus:$egress_status,proxyExitIp:$proxy_ip,directExitIp:$direct_ip,warning:$warning,policy:{name:$policy_name,wanIface:$policy_wan,wanReady:$policy_wan_ready}}')"
+        '{ok:true,restarted:true,tcpCaptureReady:true,udpCaptureRequired:$udp_required,udpCaptureReady:$udp_ready,backgroundRepair:true,egressVerified:$egress_verified,egressStatus:$egress_status,egressHttpCode:$egress_http,proxyExitIp:$proxy_ip,directExitIp:$direct_ip,warning:$warning,policy:{name:$policy_name,wanIface:$policy_wan,wanReady:$policy_wan_ready}}')"
       json_ok "$RESULT_JSON"
       exit 0
     fi

@@ -33,6 +33,8 @@ NaiveProxy: если archive содержит `libcronet.so`, installer клад
 
 Health/self-heal определяет реальный upstream процесс (`xray` или `sing-box`) и умеет читать адрес как из `outbounds[]`, так и из WireGuard `endpoints[]`.
 
+Автовыбор не считает ping/TCP-connect достаточным доказательством работоспособности: после переключения выполняется реальный HTTPS через локальный SOCKS. Узлы, которые отвечают по RTT, но падают на auth/TLS/QUIC/egress, временно помещаются в cooldown и не дёргаются каждый цикл. Подробный sing-box runtime-log хранится в tmpfs и очищается перед проверкой нового кандидата, чтобы ошибки предыдущего узла не загрязняли диагноз следующего.
+
 ## Ограничение
 
 Это не копия Hiddify GUI/config-converter. Полные dependency-графы (`selector`, `urltest`, multi-hop proxy `detour`, top-level provider DNS/rules/services) не flatten'ятся в один AntiGoblin key. Для таких профилей нужен отдельный graph-preserving importer; текущая версия вместо повреждённого «полупрофиля» возвращает ошибку для зависимого узла.

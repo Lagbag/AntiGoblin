@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>AntiGoblin</title>
-  <link rel="stylesheet" href="./styles.css?v=151">
+  <link rel="stylesheet" href="./styles.css?v=160">
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay" hidden>
@@ -73,6 +73,7 @@
         </div>
         <div class="workspace-actions">
           <div id="headerRuntimeChip" class="runtime-chip is-neutral"><span class="status-dot"></span><span>проверяю…</span></div>
+          <div id="dirtyChip" class="dirty-chip" hidden><span class="dirty-dot"></span><span>Есть неприменённые изменения</span></div>
           <button id="saveApplyBtn" type="button" class="primary header-apply">Сохранить и применить</button>
         </div>
       </header>
@@ -275,7 +276,7 @@
         <section class="panel health-panel" data-panel-id="health">
           <div class="panel-header diagnostic-head">
             <div><p id="healthKicker" class="panel-kicker">Статус</p><h2 id="healthTitle">Диагностика</h2><p class="panel-help">Здесь видно, на каком участке реально ломается цепочка: xkeen → Xray → sing-box → сервер.</p></div>
-            <div class="hero-actions compact-actions"><button id="refreshHealthBtn" type="button">Обновить</button><button id="repairRuntimeBtn" type="button" class="warning">Перезапустить VPN</button></div>
+            <div class="hero-actions compact-actions"><button id="copyDiagnosticBtn" type="button">Скопировать отчёт</button><button id="refreshHealthBtn" type="button">Обновить</button><button id="repairRuntimeBtn" type="button" class="warning">Перезапустить VPN</button></div>
           </div>
           <div id="healthBadges" class="health-badges"></div>
           <div id="exitIpRow" class="exit-ip-row"></div>
@@ -321,6 +322,6 @@
   <!-- Hidden compatibility nodes used by existing translation/render code. -->
   <div class="sr-only" aria-hidden="true"><span id="heroTitle">AntiGoblin</span><span id="heroLead">VPN routing</span></div>
 
-  <script charset="utf-8" src="./app.js?v=151"></script>
+  <script charset="utf-8" src="./app.js?v=160"></script>
 </body>
 </html>

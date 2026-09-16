@@ -9,6 +9,8 @@ PATH="/opt/bin:/opt/sbin:/sbin:/usr/sbin:/bin:/usr/bin:$PATH"
 STATE_PATH="/opt/share/xkeen-manager/xkeen-ui-state.json"
 CATALOG_PATH="/opt/share/xkeen-manager/autoselect-catalog.json"
 STATUS_PATH="/tmp/antigoblin-autoselect-status.json"
+FAILURE_CACHE_PATH="/tmp/antigoblin-autoselect-failures.json"
+APPLIED_META_PATH="/opt/share/xkeen-manager/runtime/applied-meta.json"
 RUNTIME_LIB="/opt/share/xkeen-manager/api/xkeen-runtime.sh"
 OUTBOUNDS_PATH="/opt/etc/xray/configs/04_outbounds.json"
 SINGBOX_PATH="/opt/etc/sing-box/xkeen.json"
@@ -144,6 +146,113 @@ probe_one() {
   fi
 }
 
+failure_cache_ensure() {
+  if [ -s "$FAILURE_CACHE_PATH" ] && /opt/bin/jq -e 'type == "object" and (.entries | type == "object")' "$FAILURE_CACHE_PATH" >/dev/null 2>&1; then
+    return 0
+  fi
+  printf '{"entries":{}}\n' > "$FAILURE_CACHE_PATH"
+}
+
+failure_delay_sec() {
+  reason="$1" count="$2"
+  case "$count" in ''|*[!0-9]*) count=1 ;; esac
+  case "$reason" in
+    hy2-auth-404|config-invalid) printf '3600\n'; return ;;
+    tls-error) printf '1800\n'; return ;;
+    quic-timeout) delay=300 ;;
+    runtime-restart) delay=180 ;;
+    *) delay=180 ;;
+  esac
+  i=1
+  while [ "$i" -lt "$count" ] && [ "$delay" -lt 1800 ]; do
+    delay=$((delay * 2))
+    [ "$delay" -gt 1800 ] && delay=1800
+    i=$((i + 1))
+  done
+  printf '%s\n' "$delay"
+}
+
+classify_tunnel_failure() {
+  sb_type=""
+  if [ -f "$SINGBOX_PATH" ]; then
+    sb_type="$(/opt/bin/jq -r '(.outbounds[]? | select(.tag=="proxy") | .type) // (.endpoints[]? | select(.tag=="proxy") | .type) // ""' "$SINGBOX_PATH" 2>/dev/null | head -1)"
+  fi
+  sb_log="/tmp/antigoblin-singbox-runtime.log"
+  if [ "$sb_type" = "hysteria2" ] && [ -f "$sb_log" ] && tail -n 80 "$sb_log" 2>/dev/null | grep -q 'authentication failed, status code: 404'; then
+    printf 'hy2-auth-404\n'
+  elif case "$sb_type" in hysteria|hysteria2|tuic|wireguard) true ;; *) false ;; esac \
+       && [ -f "$sb_log" ] && tail -n 80 "$sb_log" 2>/dev/null | grep -Eqi 'timeout: no recent network activity|handshake timeout|i/o timeout'; then
+    printf 'quic-timeout\n'
+  elif [ -f "$sb_log" ] && tail -n 80 "$sb_log" 2>/dev/null | grep -Eqi 'certificate|x509|tls: failed|CRYPTO_ERROR'; then
+    printf 'tls-error\n'
+  else
+    printf 'egress-failed\n'
+  fi
+}
+
+record_failure() {
+  id="$1" reason="${2:-egress-failed}"
+  [ -n "$id" ] || return 0
+  failure_cache_ensure || return 0
+  now="$(date +%s 2>/dev/null || echo 0)"
+  old_count="$(/opt/bin/jq -r --arg id "$id" '.entries[$id].count // 0' "$FAILURE_CACHE_PATH" 2>/dev/null)"
+  old_retry="$(/opt/bin/jq -r --arg id "$id" '.entries[$id].retryAt // 0' "$FAILURE_CACHE_PATH" 2>/dev/null)"
+  case "$old_count" in ''|*[!0-9]*) old_count=0 ;; esac
+  case "$old_retry" in ''|*[!0-9]*) old_retry=0 ;; esac
+  # A new failure after the old quarantine expired starts a fresh streak
+  # instead of inheriting exponential backoff forever.
+  [ "$old_retry" -gt "$now" ] 2>/dev/null || old_count=0
+  count=$((old_count + 1))
+  delay="$(failure_delay_sec "$reason" "$count")"
+  retry=$((now + delay))
+  tmp="${FAILURE_CACHE_PATH}.new-$$"
+  /opt/bin/jq --arg id "$id" --arg reason "$reason" --argjson count "$count" --argjson now "$now" --argjson retry "$retry" \
+    '.entries[$id] = {reason:$reason,count:$count,lastFailedAt:$now,retryAt:$retry}' "$FAILURE_CACHE_PATH" > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$FAILURE_CACHE_PATH" 2>/dev/null || rm -f "$tmp"
+  APPLY_FAIL_REASON="$reason"
+  APPLY_FAIL_RETRY_AT="$retry"
+}
+
+clear_failure() {
+  id="$1"
+  [ -n "$id" ] || return 0
+  failure_cache_ensure || return 0
+  tmp="${FAILURE_CACHE_PATH}.new-$$"
+  /opt/bin/jq --arg id "$id" 'del(.entries[$id])' "$FAILURE_CACHE_PATH" > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$FAILURE_CACHE_PATH" 2>/dev/null || rm -f "$tmp"
+}
+
+enrich_results_with_failures() {
+  results="$1"
+  [ -f "$results" ] || return 0
+  failure_cache_ensure || return 0
+  now="$(date +%s 2>/dev/null || echo 0)"
+  tmp="${results}.failures-$$"
+  /opt/bin/jq --slurpfile fc "$FAILURE_CACHE_PATH" --argjson now "$now" '
+    (($fc[0].entries // {})) as $f
+    | map(. as $r | ($f[.id] // null) as $x
+        | if ($x != null and (($x.retryAt // 0) > $now))
+          then . + {cooldown:true,cooldownUntil:($x.retryAt // 0),failureReason:($x.reason // "failed"),failureCount:($x.count // 1)}
+          else . + {cooldown:false}
+          end)
+  ' "$results" > "$tmp" 2>/dev/null && mv "$tmp" "$results" 2>/dev/null || rm -f "$tmp"
+}
+
+write_applied_meta() {
+  profile_id="$1" proxy_id="$2"
+  mkdir -p "$(dirname "$APPLIED_META_PATH")" 2>/dev/null || return 0
+  version="$(head -n 1 /opt/share/xkeen-manager/VERSION 2>/dev/null | tr -d '\r\n')"
+  now="$(date +%s 2>/dev/null || echo 0)"
+  name="$(/opt/bin/jq -r --arg pid "$profile_id" --arg id "$proxy_id" '.entries[]? | select(.profileId==$pid and .id==$id) | .name // ""' "$CATALOG_PATH" 2>/dev/null | head -1)"
+  protocol="$(/opt/bin/jq -r --arg pid "$profile_id" --arg id "$proxy_id" '.entries[]? | select(.profileId==$pid and .id==$id) | .protocol // ""' "$CATALOG_PATH" 2>/dev/null | head -1)"
+  tmp="${APPLIED_META_PATH}.new-$$"
+  /opt/bin/jq -n --arg version "$version" --arg profileId "$profile_id" --arg activeProxyId "$proxy_id" \
+    --arg name "$name" --arg protocol "$protocol" --argjson appliedAt "$now" \
+    '{version:$version,source:"autoselect",profileId:$profileId,activeProxyId:$activeProxyId,name:$name,protocol:$protocol,appliedAt:$appliedAt}' > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$APPLIED_META_PATH" 2>/dev/null || rm -f "$tmp"
+  chmod 600 "$APPLIED_META_PATH" 2>/dev/null || true
+}
+
 validate_cmd_bounded() {
   # $1 timeout seconds, remaining args command
   limit="$1"; shift
@@ -170,6 +279,10 @@ restart_singbox_bounded() {
   while [ $i -lt 6 ] && pidof sing-box >/dev/null 2>&1; do sleep 1; i=$((i+1)); done
   if pidof sing-box >/dev/null 2>&1; then killall -9 sing-box 2>/dev/null || true; sleep 1; fi
   rm -f /opt/var/run/sing-box.pid 2>/dev/null || true
+  # Scope detailed diagnostics to the candidate being tested.  Otherwise a
+  # stale AUTH/TLS/QUIC error from the previous outbound can poison failure
+  # classification for a freshly switched server.
+  : > /tmp/antigoblin-singbox-runtime.log 2>/dev/null || true
   /opt/sbin/start-stop-daemon -S -b -m -p /opt/var/run/sing-box.pid -x "$SINGBOX_BIN" -- run -c "$SINGBOX_PATH" >>/opt/var/log/sing-box-xkeen.log 2>&1 || return 1
   i=0
   while [ $i -lt 10 ]; do
@@ -224,6 +337,8 @@ verify_tunnel_egress() {
 
 apply_proxy() {
   target_id="$1" profile_id="$2"
+  APPLY_FAIL_REASON=""
+  APPLY_FAIL_RETRY_AT=""
   LOCK_HELD=0
   release_apply_lock() {
     if [ "$LOCK_HELD" = "1" ] && type xkeen_lock_release >/dev/null 2>&1; then
@@ -238,14 +353,14 @@ apply_proxy() {
 
   TMP_OUT="${OUTBOUNDS_PATH}.autoselect-new-$$"
   TMP_SB="${SINGBOX_PATH}.autoselect-new-$$"
-  BAK_OUT="${OUTBOUNDS_PATH}.autoselect-bak"
-  BAK_SB="${SINGBOX_PATH}.autoselect-bak"
+  BAK_OUT="${OUTBOUNDS_PATH}.autoselect-bak-$$"
+  BAK_SB="${SINGBOX_PATH}.autoselect-bak-$$"
 
   /opt/bin/jq --arg id "$target_id" --arg pid "$profile_id" -e '.entries[] | select(.id == $id and .profileId == $pid) | .outbounds' "$CATALOG_PATH" > "$TMP_OUT" 2>/dev/null || { rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
   /opt/bin/jq --arg id "$target_id" --arg pid "$profile_id" -e '.entries[] | select(.id == $id and .profileId == $pid) | .singbox' "$CATALOG_PATH" > "$TMP_SB" 2>/dev/null || { rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
   /opt/bin/jq -e '.outbounds | type == "array"' "$TMP_OUT" >/dev/null 2>&1 || { rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
   /opt/bin/jq -e '.outbounds | type == "array"' "$TMP_SB" >/dev/null 2>&1 || { rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
-  validate_cmd_bounded 12 "$SINGBOX_BIN" check -c "$TMP_SB" || { log "candidate=$target_id sing-box check failed/timeout"; rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
+  validate_cmd_bounded 12 "$SINGBOX_BIN" check -c "$TMP_SB" || { record_failure "$target_id" config-invalid; log "candidate=$target_id sing-box check failed/timeout; cooldown until ${APPLY_FAIL_RETRY_AT:-?}"; rm -f "$TMP_OUT" "$TMP_SB"; return 1; }
 
   # The browser and watchdog share the same lock only for the short commit /
   # restart phase. Endpoint probing above never blocks Save & Apply.
@@ -271,7 +386,8 @@ apply_proxy() {
   fi
 
   if ! validate_cmd_bounded 12 "$XRAY_BIN" run -test -confdir /opt/etc/xray/configs; then
-    log "candidate=$target_id xray validation failed; rollback"
+    record_failure "$target_id" config-invalid
+    log "candidate=$target_id xray validation failed; rollback; cooldown until ${APPLY_FAIL_RETRY_AT:-?}"
     [ -f "$BAK_OUT" ] && cp "$BAK_OUT" "$OUTBOUNDS_PATH"
     [ -f "$BAK_SB" ] && cp "$BAK_SB" "$SINGBOX_PATH"
     release_apply_lock
@@ -279,7 +395,8 @@ apply_proxy() {
   fi
 
   if ! restart_singbox_bounded || ! restart_xray_bounded; then
-    log "candidate=$target_id restart failed; rollback"
+    record_failure "$target_id" runtime-restart
+    log "candidate=$target_id restart failed; rollback; cooldown until ${APPLY_FAIL_RETRY_AT:-?}"
     [ -f "$BAK_OUT" ] && cp "$BAK_OUT" "$OUTBOUNDS_PATH"
     [ -f "$BAK_SB" ] && cp "$BAK_SB" "$SINGBOX_PATH"
     restart_singbox_bounded >/dev/null 2>&1 || true
@@ -289,7 +406,9 @@ apply_proxy() {
   fi
 
   if ! verify_tunnel_egress; then
-    log "candidate=$target_id egress verification failed; rollback"
+    fail_reason="$(classify_tunnel_failure)"
+    record_failure "$target_id" "$fail_reason"
+    log "candidate=$target_id egress verification failed reason=$fail_reason; rollback; cooldown until ${APPLY_FAIL_RETRY_AT:-?}"
     [ -f "$BAK_OUT" ] && cp "$BAK_OUT" "$OUTBOUNDS_PATH"
     [ -f "$BAK_SB" ] && cp "$BAK_SB" "$SINGBOX_PATH"
     restart_singbox_bounded >/dev/null 2>&1 || true
@@ -301,14 +420,22 @@ apply_proxy() {
   TMP_STATE="${STATE_PATH}.autoselect-new-$$"
   if /opt/bin/jq --arg pid "$profile_id" --arg id "$target_id" \
       '(.profiles[] | select(.id == $pid) | .activeProxyId) = $id' "$STATE_PATH" > "$TMP_STATE" 2>/dev/null \
-      && /opt/bin/jq -e '.' "$TMP_STATE" >/dev/null 2>&1; then
-    mv "$TMP_STATE" "$STATE_PATH"
+      && /opt/bin/jq -e '.' "$TMP_STATE" >/dev/null 2>&1 \
+      && mv "$TMP_STATE" "$STATE_PATH" 2>/dev/null; then
     chmod 600 "$STATE_PATH" 2>/dev/null || true
   else
     rm -f "$TMP_STATE"
-    log "candidate=$target_id switched runtime but failed to update state"
+    log "candidate=$target_id runtime passed, but state commit failed; rolling runtime back to avoid UI/runtime split-brain"
+    [ -f "$BAK_OUT" ] && cp "$BAK_OUT" "$OUTBOUNDS_PATH"
+    [ -f "$BAK_SB" ] && cp "$BAK_SB" "$SINGBOX_PATH"
+    restart_singbox_bounded >/dev/null 2>&1 || true
+    restart_xray_bounded >/dev/null 2>&1 || true
+    release_apply_lock
+    return 1
   fi
 
+  clear_failure "$target_id"
+  write_applied_meta "$profile_id" "$target_id"
   rm -f "$BAK_OUT" "$BAK_SB" 2>/dev/null || true
   release_apply_lock
   date +%s > /tmp/antigoblin-autoselect-last-switch.ts 2>/dev/null || true
@@ -354,13 +481,21 @@ run_once_inner() {
   else
     echo '[]' > "$tmpdir/results.json"
   fi
+  enrich_results_with_failures "$tmpdir/results.json"
 
-  best_id="$(/opt/bin/jq -r '[.[] | select(.ok == true and (.latencyMs|type == "number"))] | sort_by(.latencyMs) | .[0].id // ""' "$tmpdir/results.json")"
+  if [ "$force" = "1" ]; then ignore_cooldown=true; else ignore_cooldown=false; fi
+  best_id="$(/opt/bin/jq -r --argjson ignoreCooldown "$ignore_cooldown" '[.[] | select(.ok == true and (.latencyMs|type == "number") and ($ignoreCooldown or (.cooldown != true)))] | sort_by(.latencyMs) | .[0].id // ""' "$tmpdir/results.json")"
   best_ms="$(/opt/bin/jq -r --arg id "$best_id" '.[] | select(.id == $id) | .latencyMs' "$tmpdir/results.json" | head -n1)"
   current_ms="$(/opt/bin/jq -r --arg id "$current_id" '.[] | select(.id == $id and .ok == true) | .latencyMs' "$tmpdir/results.json" | head -n1)"
 
   if [ -z "$best_id" ]; then
-    json_status error "all servers unreachable by latency probes" false "" "" "$current_id" "$current_ms" "$tmpdir/results.json"
+    cooling="$(/opt/bin/jq '[.[] | select(.ok == true and .cooldown == true)] | length' "$tmpdir/results.json" 2>/dev/null || echo 0)"
+    case "$cooling" in ''|*[!0-9]*) cooling=0 ;; esac
+    if [ "$cooling" -gt 0 ]; then
+      json_status error "all reachable servers are temporarily quarantined after tunnel failures" false "" "" "$current_id" "$current_ms" "$tmpdir/results.json"
+    else
+      json_status error "all servers unreachable by latency probes" false "" "" "$current_id" "$current_ms" "$tmpdir/results.json"
+    fi
     rm -rf "$tmpdir"
     return 1
   fi
@@ -372,10 +507,14 @@ run_once_inner() {
   if [ -n "$current_id" ]; then
     if verify_tunnel_egress; then
       current_tunnel_ok=1
+      clear_failure "$current_id"
     else
       current_tunnel_ok=0
-      log "current tunnel failed egress validation id=$current_id latency=${current_ms:-unknown}ms"
+      fail_reason="$(classify_tunnel_failure)"
+      record_failure "$current_id" "$fail_reason"
+      log "current tunnel failed egress validation id=$current_id latency=${current_ms:-unknown}ms reason=$fail_reason cooldown_until=${APPLY_FAIL_RETRY_AT:-?}"
     fi
+    enrich_results_with_failures "$tmpdir/results.json"
   fi
 
   switch=0
@@ -407,7 +546,7 @@ run_once_inner() {
     tried=0
     selected_id=""
     selected_ms=""
-    /opt/bin/jq -r '[.[] | select(.ok == true and (.latencyMs|type == "number"))] | sort_by(.latencyMs) | .[] | [.id, (.latencyMs|tostring)] | @tsv' "$tmpdir/results.json" > "$tmpdir/candidates.tsv" 2>/dev/null || true
+    /opt/bin/jq -r --argjson ignoreCooldown "$ignore_cooldown" '[.[] | select(.ok == true and (.latencyMs|type == "number") and ($ignoreCooldown or (.cooldown != true)))] | sort_by(.latencyMs) | .[] | [.id, (.latencyMs|tostring)] | @tsv' "$tmpdir/results.json" > "$tmpdir/candidates.tsv" 2>/dev/null || true
     while IFS="$(printf '\t')" read -r candidate_id candidate_ms; do
       [ -n "$candidate_id" ] || continue
 
@@ -496,9 +635,25 @@ run_once() {
 case "${1:-}" in
   --loop)
     log "autoselect loop started"
+    startup_failures=0
     while :; do
-      if is_enabled; then run_once 0 || true; fi
-      sleep "$(interval_sec)"
+      sleep_for="$(interval_sec)"
+      if is_enabled; then
+        if run_once 0; then
+          startup_failures=0
+        else
+          # Right after router/WAN boot DNS, the default route or Entware can
+          # become ready a few seconds after this service.  Do a few quick
+          # retries instead of leaving a dead node active for the full 5 min
+          # interval.  After three failures return to the normal interval so
+          # a genuinely broken subscription cannot create a hot loop.
+          startup_failures=$((startup_failures + 1))
+          [ "$startup_failures" -le 3 ] && sleep_for=20
+        fi
+      else
+        startup_failures=0
+      fi
+      sleep "$sleep_for"
     done
     ;;
   --once)
